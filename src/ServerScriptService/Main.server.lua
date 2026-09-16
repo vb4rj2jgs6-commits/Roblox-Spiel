@@ -21,6 +21,8 @@
 	  4. WorldBuilder — Weltraum-Umgebung
 	  5. PlotService  — braucht die Welt
 	  6. ButtonService/DropperService — brauchen die Plots
+	  7. FleetService — muss vor HangarService laufen
+	  8. HangarService — braucht Plots UND FleetService
 	================================================================
 ]]
 
@@ -38,6 +40,8 @@ local WorldBuilder = require(Services.WorldBuilder)
 local PlotService = require(Services.PlotService)
 local ButtonService = require(Services.ButtonService)
 local DropperService = require(Services.DropperService)
+local FleetService = require(Services.FleetService)
+local HangarService = require(Services.HangarService)
 
 print(("=== %s startet ==="):format(Config.Spiel.Name))
 
@@ -55,6 +59,9 @@ PlotService:Init(welt)
 ButtonService:Init()
 DropperService:Init()
 
+FleetService:Init()
+HangarService:Init()
+
 -- ================================================================
 -- 2) SPIELER-LEBENSZYKLUS
 -- ================================================================
@@ -70,6 +77,11 @@ local function spielerBetritt(spieler: Player)
 
 	CurrencyService:LeaderstatsAnlegen(spieler)
 	PlotService:Zuweisen(spieler)
+
+	-- Holt Schiffe nach, die waehrend der Offline-Zeit fertig geworden sind,
+	-- und schickt dem Client seinen Flottenstand.
+	FleetService:SpielerVorbereiten(spieler)
+
 	CurrencyService:Senden(spieler)
 
 	-- Beim (Neu-)Spawn auf den eigenen Plot setzen

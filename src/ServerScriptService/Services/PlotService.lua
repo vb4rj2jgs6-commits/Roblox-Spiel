@@ -23,6 +23,7 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local CollectionService = game:GetService("CollectionService")
 
 local Config = require(ReplicatedStorage:WaitForChild("GameConfig"))
 local Util = require(ReplicatedStorage:WaitForChild("Util"))
@@ -240,6 +241,100 @@ local function baueSammelkern(plot: any)
 	end)
 end
 
+-- Die Werft: Gebaeude, an dem der Spieler die Flotten-GUI oeffnet.
+-- Sie ist nicht kaufbar, sondern von Anfang an da — sonst haette der
+-- Spieler keinen Zugang zum Flotten-System.
+local function baueWerft(plot: any)
+	local basisPos = PlotService:ZuWelt(plot, Config.PlotPunkte.Werft)
+
+	local model = Instance.new("Model")
+	model.Name = "Werft"
+	model.Parent = plot.Model
+
+	local plattform = Util.NeuerPart({
+		Name = "Plattform",
+		Size = Vector3.new(18, 2, 18),
+		Color = Color3.fromRGB(44, 50, 70),
+		Material = Enum.Material.Metal,
+		CFrame = CFrame.new(basisPos + Vector3.new(0, 1, 0)),
+	})
+	plattform.Parent = model
+
+	-- Zwei Streben mit einem Neon-Bogen dazwischen
+	for _, seite in { -1, 1 } do
+		local strebe = Util.NeuerPart({
+			Name = "Strebe",
+			Size = Vector3.new(1.6, 16, 1.6),
+			Color = Color3.fromRGB(62, 70, 94),
+			Material = Enum.Material.Metal,
+			CanCollide = false,
+			CanQuery = false,
+			CanTouch = false,
+			CFrame = CFrame.new(basisPos + Vector3.new(seite * 7, 10, 0)),
+		})
+		strebe.Parent = model
+	end
+
+	local bogen = Util.NeuerPart({
+		Name = "Bogen",
+		Size = Vector3.new(15.6, 1.2, 2.4),
+		Color = Color3.fromRGB(120, 200, 255),
+		Material = Enum.Material.Neon,
+		CanCollide = false,
+		CanQuery = false,
+		CanTouch = false,
+		CFrame = CFrame.new(basisPos + Vector3.new(0, 18, 0)),
+	})
+	bogen.Parent = model
+
+	-- Die Konsole, an der man die Werft oeffnet
+	local konsole = Util.NeuerPart({
+		Name = "Konsole",
+		Size = Vector3.new(5, 4, 2.4),
+		Color = Color3.fromRGB(30, 36, 52),
+		Material = Enum.Material.Metal,
+		CFrame = CFrame.new(basisPos + Vector3.new(0, 4, 6))
+			* CFrame.Angles(math.rad(-18), 0, 0),
+	})
+	konsole.Parent = model
+
+	-- ProximityPrompt = die Taste, die eingeblendet wird, wenn man nah dran
+	-- steht (auf dem Handy ein antippbarer Knopf). Das Oeffnen der GUI
+	-- passiert komplett auf dem Client — dafuer braucht es kein RemoteEvent.
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.Name = "WerftPrompt"
+	prompt.ActionText = "Werft öffnen"
+	prompt.ObjectText = "Raumwerft"
+	prompt.HoldDuration = 0
+	prompt.MaxActivationDistance = 14
+	prompt.RequiresLineOfSight = false
+	prompt.Parent = konsole
+
+	-- Ein "Tag" ist eine Markierung, nach der man spaeter suchen kann.
+	-- Der Client holt sich damit alle Werft-Konsolen, ohne den Explorer
+	-- durchsuchen zu muessen.
+	CollectionService:AddTag(prompt, "WerftPrompt")
+
+	local schild = Instance.new("BillboardGui")
+	schild.Name = "Beschriftung"
+	schild.Size = UDim2.fromScale(14, 3)
+	schild.StudsOffsetWorldSpace = Vector3.new(0, 3, 0)
+	schild.MaxDistance = 220
+	schild.Parent = bogen
+
+	local text = Instance.new("TextLabel")
+	text.Size = UDim2.fromScale(1, 1)
+	text.BackgroundTransparency = 1
+	text.Font = Enum.Font.GothamBold
+	text.TextScaled = true
+	text.TextColor3 = Color3.fromRGB(180, 225, 255)
+	text.TextStrokeTransparency = 0.35
+	text.Text = "RAUMWERFT"
+	text.Parent = schild
+
+	plot.WerftModel = model
+end
+
 local function baueSpawnPad(plot: any)
 	local pad = Util.NeuerPart({
 		Name = "SpawnPad",
@@ -279,6 +374,7 @@ function PlotService:PlotErstellen(index: number)
 	baueSchild(plot)
 	baueSammelkern(plot)
 	baueSpawnPad(plot)
+	baueWerft(plot)
 
 	local gebaeude = Instance.new("Folder")
 	gebaeude.Name = "Gebaeude"

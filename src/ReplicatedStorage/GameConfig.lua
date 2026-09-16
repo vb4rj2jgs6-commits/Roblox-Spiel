@@ -220,6 +220,8 @@ Config.Kaufbares = {
 Config.PlotPunkte = {
 	Sammelkern = Vector3.new(0, 0, -46),   -- Hier landen die Lieferungen
 	Spawn      = Vector3.new(0, 0, 48),    -- Hier erscheint der Spieler
+	Werft      = Vector3.new(30, 0, 48),   -- Gebaeude zum Oeffnen der Flotten-GUI
+	Orbit      = Vector3.new(0, 75, 0),    -- Mittelpunkt der schwebenden Flotte
 }
 
 return Config

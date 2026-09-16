@@ -36,13 +36,15 @@ Rechtsklick auf einen Ordner → **Insert Object** → passenden Typ wählen.
 ### 2.1 ReplicatedStorage
 
 Rechtsklick auf `ReplicatedStorage` → **Insert Object → ModuleScript**.
-Viermal, und jeweils umbenennen (Doppelklick auf den Namen):
+Sechsmal, und jeweils umbenennen (Doppelklick auf den Namen):
 
 | Name | Inhalt aus Datei |
 |---|---|
 | `GameConfig` | `src/ReplicatedStorage/GameConfig.lua` |
+| `FleetConfig` | `src/ReplicatedStorage/FleetConfig.lua` |
 | `Util` | `src/ReplicatedStorage/Util.lua` |
 | `Signal` | `src/ReplicatedStorage/Signal.lua` |
+| `UiKit` | `src/ReplicatedStorage/UiKit.lua` |
 | `Net` | `src/ReplicatedStorage/Net.lua` |
 
 Bei jedem: Doppelklick öffnet den Editor. Inhalt komplett markieren (`Strg+A`),
@@ -63,7 +65,7 @@ löschen, Datei-Inhalt einfügen.
 2. Rechtsklick auf `ServerScriptService` → **Insert Object → Folder**
    → umbenennen in **`Services`**
 
-3. In diesen Ordner **sechs ModuleScripts** einfügen:
+3. In diesen Ordner **acht ModuleScripts** einfügen:
 
 | Name | Inhalt aus Datei |
 |---|---|
@@ -73,6 +75,8 @@ löschen, Datei-Inhalt einfügen.
 | `PlotService` | `src/ServerScriptService/Services/PlotService.lua` |
 | `ButtonService` | `src/ServerScriptService/Services/ButtonService.lua` |
 | `DropperService` | `src/ServerScriptService/Services/DropperService.lua` |
+| `FleetService` | `src/ServerScriptService/Services/FleetService.lua` |
+| `HangarService` | `src/ServerScriptService/Services/HangarService.lua` |
 
 > Die Namen müssen **exakt** stimmen (Groß-/Kleinschreibung!), sonst findet
 > `require(script.Parent.XYZ)` das Modul nicht.
@@ -80,8 +84,12 @@ löschen, Datei-Inhalt einfügen.
 ### 2.3 StarterPlayerScripts
 
 Im Explorer: `StarterPlayer` aufklappen → `StarterPlayerScripts`.
-Rechtsklick → **Insert Object → LocalScript** → umbenennen in **`HudClient`**
-→ Inhalt aus `src/StarterPlayerScripts/HudClient.client.lua`.
+Dort **zwei LocalScripts** einfügen (Rechtsklick → **Insert Object → LocalScript**):
+
+| Name | Inhalt aus Datei |
+|---|---|
+| `HudClient` | `src/StarterPlayerScripts/HudClient.client.lua` |
+| `FleetGui` | `src/StarterPlayerScripts/FleetGui.client.lua` |
 
 > `StarterGui` bleibt leer. Das HUD wird per Code erzeugt — so flackert es beim
 > Respawn nicht und du musst nichts zusammenklicken.
@@ -93,8 +101,10 @@ Rechtsklick → **Insert Object → LocalScript** → umbenennen in **`HudClient
 ```
 ReplicatedStorage
 ├── GameConfig       (ModuleScript)
+├── FleetConfig      (ModuleScript)
 ├── Util             (ModuleScript)
 ├── Signal           (ModuleScript)
+├── UiKit            (ModuleScript)
 └── Net              (ModuleScript)
 
 ServerScriptService
@@ -105,11 +115,14 @@ ServerScriptService
     ├── WorldBuilder     (ModuleScript)
     ├── PlotService      (ModuleScript)
     ├── ButtonService    (ModuleScript)
-    └── DropperService   (ModuleScript)
+    ├── DropperService   (ModuleScript)
+    ├── FleetService     (ModuleScript)
+    └── HangarService    (ModuleScript)
 
 StarterPlayer
 └── StarterPlayerScripts
-    └── HudClient    (LocalScript)
+    ├── HudClient    (LocalScript)
+    └── FleetGui     (LocalScript)
 ```
 
 ---
@@ -128,6 +141,17 @@ StarterPlayer
 8. Zum Sammelkern laufen **oder** oben rechts auf **SAMMELN** drücken
 9. Das nächste Kauf-Pad erscheint rechts
 
+### Flotte testen
+
+10. Links am Bildrand auf **FLOTTE** klicken — oder rechts vorne zur
+    **RAUMWERFT** laufen und den Prompt auslösen
+11. Ein Jäger kostet 2.500 CR. Kurz Credits sammeln, dann **BAUEN +1**
+12. Unten im Fenster läuft der Countdown der Bauwarteschlange
+13. Nach 6 Sekunden erscheint das Schiff — schau nach oben: Es schwebt
+    im Orbit über deinem Plot und dreht sich langsam mit
+14. Mehr als 12 Hangar-Plätze brauchst du für größere Schiffe:
+    **HANGAR ERWEITERN**
+
 In der **Output**-Konsole (Ansicht → Output) sollte stehen:
 ```
 === STELLAR DOMINION startet ===
@@ -136,6 +160,8 @@ In der **Output**-Konsole (Ansicht → Output) sollte stehen:
 [PlotService] bereit
 [ButtonService] bereit
 [DropperService] bereit
+[FleetService] bereit
+[HangarService] bereit
 === STELLAR DOMINION bereit ===
 [Main] DeinName ist beigetreten
 [PlotService] DeinName -> Plot 1
@@ -158,6 +184,9 @@ Jeder Spieler bekommt automatisch einen eigenen Plot.
 | HUD erscheint nicht | `HudClient` liegt in `StarterGui` statt `StarterPlayerScripts`, oder ist ein *Script* statt *LocalScript*. |
 | Keine Plots sichtbar | Du bist zu weit weg. Die Plots liegen im Raster um den Nullpunkt. |
 | Spieler fällt ins Nichts | `Config.Plot.Hoehe` verändert, aber der Spawn nicht angepasst. |
+| Werft-Fenster öffnet sich nicht | `UiKit` fehlt in `ReplicatedStorage`, oder `FleetGui` liegt nicht in `StarterPlayerScripts`. |
+| Schiffe unsichtbar, obwohl gebaut | Nach oben schauen — der Orbit liegt 75 Studs über dem Plot (`Config.PlotPunkte.Orbit`). |
+| „Die Werft ist ausgelastet" | Warteschlange voll (12 Aufträge). Kurz warten oder `FleetConfig.Allgemein.MaxWarteschlange` erhöhen. |
 
 ---
 
@@ -183,6 +212,20 @@ Einen neuen Dropper hinzufügen? Einen Eintrag in `Config.Kaufbares` ergänzen:
 
 Mehr ist nicht nötig — Button, Modell, Speicherung und Freischaltlogik
 entstehen automatisch.
+
+### Flotte balancen
+
+Alles in `FleetConfig`:
+
+```lua
+FleetConfig.Allgemein.BasisKapazitaet = 12    -- Hangar-Plätze am Anfang
+FleetConfig.Allgemein.MaxSichtbar = 24        -- Schiffe im Orbit (Performance!)
+FleetConfig.Allgemein.MaxWarteschlange = 12   -- gleichzeitige Bauaufträge
+```
+
+Eine neue Schiffsklasse ist ein weiterer Eintrag in `FleetConfig.Klassen` —
+Werft-Zeile, 3D-Modell und Validierung entstehen daraus automatisch. Auf
+Handys lohnt es sich, `MaxSichtbar` auf 12–16 zu senken.
 
 > ⚠️ Einmal veröffentlichte `Id`-Werte **nie** umbenennen. Die Ids stehen so in
 > den Spielständen. Eine geänderte Id bedeutet für alle Spieler: Objekt weg,

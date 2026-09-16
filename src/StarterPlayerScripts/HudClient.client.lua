@@ -11,6 +11,11 @@
 	in die PlayerGui. Ergebnis: Du musst im Explorer nichts von Hand
 	zusammenklicken, und die Anzeige flackert beim Respawn nicht.
 
+	DIESES SCRIPT BAUT AUSSERDEM DIE AKTIONSLEISTE (links am Rand).
+	Andere Client-Scripts (Werft, spaeter Planeten) haengen sich dort
+	mit einer Zeile einen Knopf hinein — sie muessen dieses Script
+	nicht kennen und nicht aendern.
+
 	WICHTIG (Exploit-Schutz):
 	Dieses Script zeigt nur an, was der Server schickt. Es RECHNET
 	nichts aus. Wenn ein Exploiter hier Zahlen aendert, sieht nur er
@@ -27,187 +32,138 @@ local TweenService = game:GetService("TweenService")
 local Config = require(ReplicatedStorage:WaitForChild("GameConfig"))
 local Util = require(ReplicatedStorage:WaitForChild("Util"))
 local Net = require(ReplicatedStorage:WaitForChild("Net"))
+local UiKit = require(ReplicatedStorage:WaitForChild("UiKit"))
 
 local spieler = Players.LocalPlayer
 local spielerGui = spieler:WaitForChild("PlayerGui")
+local Farben = UiKit.Farben
 
 -- ================================================================
--- FARBEN (an einer Stelle, damit du das Design schnell umstellen kannst)
+-- GRUNDGERUEST
 -- ================================================================
-local FARBEN = {
-	Panel = Color3.fromRGB(16, 19, 30),
-	PanelRand = Color3.fromRGB(0, 190, 255),
-	Text = Color3.fromRGB(235, 242, 255),
-	TextGedimmt = Color3.fromRGB(140, 155, 180),
-	Akzent = Color3.fromRGB(0, 220, 255),
-	Gut = Color3.fromRGB(70, 230, 140),
-	Warnung = Color3.fromRGB(255, 90, 100),
-	Gold = Color3.fromRGB(255, 205, 90),
-}
+local hud = UiKit.Neu("ScreenGui", {
+	Name = "HUD",
+	ResetOnSpawn = false,          -- ueberlebt den Respawn
+	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+}, spielerGui)
+
+UiKit.ErstelleAktionsleiste(hud)
 
 -- ================================================================
--- KLEINE BAU-HELFER
+-- WAEHRUNGSPANEL (oben rechts)
 -- ================================================================
-local function ecken(eltern: Instance, radius: number)
-	local ecke = Instance.new("UICorner")
-	ecke.CornerRadius = UDim.new(0, radius)
-	ecke.Parent = eltern
-	return ecke
-end
+local panel = UiKit.Neu("Frame", {
+	Name = "Waehrungspanel",
+	AnchorPoint = Vector2.new(1, 0),
+	Position = UDim2.new(1, -12, 0, 12),
+	Size = UDim2.new(0, 246, 0, 164),
+	BackgroundColor3 = Farben.Panel,
+	BackgroundTransparency = 0.12,
+	BorderSizePixel = 0,
+}, hud)
+UiKit.Ecken(panel, 12)
+local panelRand = UiKit.Rand(panel, Farben.PanelRand, 1.5, 0.55)
+UiKit.Neu("UIPadding", {
+	PaddingTop = UDim.new(0, 10),
+	PaddingBottom = UDim.new(0, 10),
+	PaddingLeft = UDim.new(0, 12),
+	PaddingRight = UDim.new(0, 12),
+}, panel)
 
-local function rand(eltern: Instance, farbe: Color3, dicke: number, transparenz: number?)
-	local strich = Instance.new("UIStroke")
-	strich.Color = farbe
-	strich.Thickness = dicke
-	strich.Transparency = transparenz or 0.4
-	strich.Parent = eltern
-	return strich
-end
+UiKit.Text({
+	Name = "Ueberschrift",
+	Size = UDim2.new(1, 0, 0, 14),
+	TextSize = 11,
+	TextColor3 = Farben.TextGedimmt,
+	Text = "GUTHABEN",
+}, panel)
 
--- ================================================================
--- GUI AUFBAUEN
--- ================================================================
-local hud = Instance.new("ScreenGui")
-hud.Name = "HUD"
-hud.ResetOnSpawn = false          -- ueberlebt den Respawn
-hud.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-hud.Parent = spielerGui
+local geldLabel = UiKit.Text({
+	Name = "Geld",
+	Position = UDim2.new(0, 0, 0, 16),
+	Size = UDim2.new(1, 0, 0, 34),
+	Font = Enum.Font.GothamBlack,
+	TextSize = 28,
+	Text = "0 " .. Config.Spiel.Waehrung,
+}, panel)
 
--- ---------- Haupt-Panel oben rechts ----------
-local panel = Instance.new("Frame")
-panel.Name = "Waehrungspanel"
-panel.AnchorPoint = Vector2.new(1, 0)
-panel.Position = UDim2.new(1, -12, 0, 12)
-panel.Size = UDim2.new(0, 246, 0, 164)
-panel.BackgroundColor3 = FARBEN.Panel
-panel.BackgroundTransparency = 0.12
-panel.BorderSizePixel = 0
-panel.Parent = hud
-ecken(panel, 12)
-rand(panel, FARBEN.PanelRand, 1.5, 0.55)
+local multLabel = UiKit.Text({
+	Name = "Multiplikator",
+	Position = UDim2.new(0, 0, 0, 51),
+	Size = UDim2.new(1, 0, 0, 16),
+	Font = Enum.Font.GothamBold,
+	TextSize = 12,
+	TextColor3 = Farben.Gold,
+	Text = "x1.00 Einkommen",
+}, panel)
 
-local innenAbstand = Instance.new("UIPadding")
-innenAbstand.PaddingTop = UDim.new(0, 10)
-innenAbstand.PaddingBottom = UDim.new(0, 10)
-innenAbstand.PaddingLeft = UDim.new(0, 12)
-innenAbstand.PaddingRight = UDim.new(0, 12)
-innenAbstand.Parent = panel
+local lagerTitel = UiKit.Text({
+	Name = "LagerTitel",
+	Position = UDim2.new(0, 0, 0, 72),
+	Size = UDim2.new(1, 0, 0, 14),
+	TextSize = 11,
+	TextColor3 = Farben.TextGedimmt,
+	Text = "LAGER  0 / 0",
+}, panel)
 
--- ---------- Zeile: Ueberschrift ----------
-local ueberschrift = Instance.new("TextLabel")
-ueberschrift.Name = "Ueberschrift"
-ueberschrift.Size = UDim2.new(1, 0, 0, 14)
-ueberschrift.BackgroundTransparency = 1
-ueberschrift.Font = Enum.Font.GothamMedium
-ueberschrift.TextSize = 11
-ueberschrift.TextXAlignment = Enum.TextXAlignment.Left
-ueberschrift.TextColor3 = FARBEN.TextGedimmt
-ueberschrift.Text = "GUTHABEN"
-ueberschrift.Parent = panel
+local balkenHuelle = UiKit.Neu("Frame", {
+	Name = "LagerBalken",
+	Position = UDim2.new(0, 0, 0, 89),
+	Size = UDim2.new(1, 0, 0, 10),
+	BackgroundColor3 = Color3.fromRGB(35, 40, 58),
+	BorderSizePixel = 0,
+}, panel)
+UiKit.Ecken(balkenHuelle, 5)
 
--- ---------- Zeile: Geldbetrag ----------
-local geldLabel = Instance.new("TextLabel")
-geldLabel.Name = "Geld"
-geldLabel.Position = UDim2.new(0, 0, 0, 16)
-geldLabel.Size = UDim2.new(1, 0, 0, 34)
-geldLabel.BackgroundTransparency = 1
-geldLabel.Font = Enum.Font.GothamBlack
-geldLabel.TextSize = 28
-geldLabel.TextXAlignment = Enum.TextXAlignment.Left
-geldLabel.TextColor3 = FARBEN.Text
-geldLabel.Text = "0 " .. Config.Spiel.Waehrung
-geldLabel.Parent = panel
+local balkenFuellung = UiKit.Neu("Frame", {
+	Name = "Fuellung",
+	Size = UDim2.new(0, 0, 1, 0),
+	BackgroundColor3 = Farben.Akzent,
+	BorderSizePixel = 0,
+}, balkenHuelle)
+UiKit.Ecken(balkenFuellung, 5)
 
--- ---------- Zeile: Multiplikator + Rebirths ----------
-local multLabel = Instance.new("TextLabel")
-multLabel.Name = "Multiplikator"
-multLabel.Position = UDim2.new(0, 0, 0, 51)
-multLabel.Size = UDim2.new(1, 0, 0, 16)
-multLabel.BackgroundTransparency = 1
-multLabel.Font = Enum.Font.GothamBold
-multLabel.TextSize = 12
-multLabel.TextXAlignment = Enum.TextXAlignment.Left
-multLabel.TextColor3 = FARBEN.Gold
-multLabel.Text = "x1.00 Einkommen"
-multLabel.Parent = panel
-
--- ---------- Lager-Ueberschrift ----------
-local lagerTitel = Instance.new("TextLabel")
-lagerTitel.Name = "LagerTitel"
-lagerTitel.Position = UDim2.new(0, 0, 0, 72)
-lagerTitel.Size = UDim2.new(1, 0, 0, 14)
-lagerTitel.BackgroundTransparency = 1
-lagerTitel.Font = Enum.Font.GothamMedium
-lagerTitel.TextSize = 11
-lagerTitel.TextXAlignment = Enum.TextXAlignment.Left
-lagerTitel.TextColor3 = FARBEN.TextGedimmt
-lagerTitel.Text = "LAGER  0 / 0"
-lagerTitel.Parent = panel
-
--- ---------- Lager-Fortschrittsbalken ----------
-local balkenHuelle = Instance.new("Frame")
-balkenHuelle.Name = "LagerBalken"
-balkenHuelle.Position = UDim2.new(0, 0, 0, 89)
-balkenHuelle.Size = UDim2.new(1, 0, 0, 10)
-balkenHuelle.BackgroundColor3 = Color3.fromRGB(35, 40, 58)
-balkenHuelle.BorderSizePixel = 0
-balkenHuelle.Parent = panel
-ecken(balkenHuelle, 5)
-
-local balkenFuellung = Instance.new("Frame")
-balkenFuellung.Name = "Fuellung"
-balkenFuellung.Size = UDim2.new(0, 0, 1, 0)
-balkenFuellung.BackgroundColor3 = FARBEN.Akzent
-balkenFuellung.BorderSizePixel = 0
-balkenFuellung.Parent = balkenHuelle
-ecken(balkenFuellung, 5)
-
--- ---------- Sammeln-Knopf ----------
-local sammelKnopf = Instance.new("TextButton")
-sammelKnopf.Name = "Sammeln"
-sammelKnopf.Position = UDim2.new(0, 0, 0, 106)
-sammelKnopf.Size = UDim2.new(1, 0, 0, 38)
-sammelKnopf.BackgroundColor3 = FARBEN.Gut
-sammelKnopf.BorderSizePixel = 0
-sammelKnopf.AutoButtonColor = true
-sammelKnopf.Font = Enum.Font.GothamBold
-sammelKnopf.TextSize = 15
-sammelKnopf.TextColor3 = Color3.fromRGB(8, 20, 14)
-sammelKnopf.Text = "SAMMELN"
-sammelKnopf.Parent = panel
-ecken(sammelKnopf, 9)
+local sammelKnopf = UiKit.Knopf({
+	Name = "Sammeln",
+	Position = UDim2.new(0, 0, 0, 106),
+	Size = UDim2.new(1, 0, 0, 38),
+	BackgroundColor3 = Farben.Gut,
+	TextSize = 15,
+	TextColor3 = Color3.fromRGB(8, 20, 14),
+	Text = "SAMMELN",
+}, panel)
 
 -- ================================================================
 -- BENACHRICHTIGUNGEN (Toasts)
 -- ================================================================
-local toastBereich = Instance.new("Frame")
-toastBereich.Name = "Toasts"
-toastBereich.AnchorPoint = Vector2.new(0.5, 1)
-toastBereich.Position = UDim2.new(0.5, 0, 1, -110)
-toastBereich.Size = UDim2.new(0, 320, 0, 160)
-toastBereich.BackgroundTransparency = 1
-toastBereich.Parent = hud
+local toastBereich = UiKit.Neu("Frame", {
+	Name = "Toasts",
+	AnchorPoint = Vector2.new(0.5, 1),
+	Position = UDim2.new(0.5, 0, 1, -110),
+	Size = UDim2.new(0, 340, 0, 170),
+	BackgroundTransparency = 1,
+}, hud)
 
-local toastLayout = Instance.new("UIListLayout")
-toastLayout.FillDirection = Enum.FillDirection.Vertical
-toastLayout.VerticalAlignment = Enum.VerticalAlignment.Bottom
-toastLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-toastLayout.Padding = UDim.new(0, 6)
-toastLayout.Parent = toastBereich
+UiKit.Neu("UIListLayout", {
+	FillDirection = Enum.FillDirection.Vertical,
+	VerticalAlignment = Enum.VerticalAlignment.Bottom,
+	HorizontalAlignment = Enum.HorizontalAlignment.Center,
+	Padding = UDim.new(0, 6),
+}, toastBereich)
 
 local function zeigeToast(text: string, farbe: Color3)
-	local karte = Instance.new("TextLabel")
-	karte.Size = UDim2.new(1, 0, 0, 32)
-	karte.BackgroundColor3 = FARBEN.Panel
-	karte.BackgroundTransparency = 0.1
-	karte.BorderSizePixel = 0
-	karte.Font = Enum.Font.GothamBold
-	karte.TextSize = 14
-	karte.TextColor3 = farbe
-	karte.Text = text
-	karte.Parent = toastBereich
-	ecken(karte, 8)
-	rand(karte, farbe, 1, 0.5)
+	local karte = UiKit.Text({
+		Size = UDim2.new(1, 0, 0, 32),
+		BackgroundColor3 = Farben.Panel,
+		BackgroundTransparency = 0.1,
+		Font = Enum.Font.GothamBold,
+		TextSize = 14,
+		TextXAlignment = Enum.TextXAlignment.Center,
+		TextColor3 = farbe,
+		Text = text,
+	}, toastBereich)
+	UiKit.Ecken(karte, 8)
+	UiKit.Rand(karte, farbe, 1, 0.5)
 
 	task.delay(2.6, function()
 		local weg = TweenService:Create(karte, TweenInfo.new(0.35), {
@@ -222,7 +178,7 @@ local function zeigeToast(text: string, farbe: Color3)
 end
 
 -- ================================================================
--- DATEN VOM SERVER VERARBEITEN
+-- DATEN VOM SERVER
 -- ================================================================
 local zustand = {
 	Geld = 0,
@@ -243,26 +199,15 @@ Net:Event("DatenUpdate").OnClientEvent:Connect(function(daten)
 end)
 
 Net:Event("Benachrichtigung").OnClientEvent:Connect(function(info)
-	local farbe = FARBEN.Text
-	if info.Farbe == "Warnung" then
-		farbe = FARBEN.Warnung
-	elseif info.Farbe == "Gut" then
-		farbe = FARBEN.Gut
-	elseif info.Farbe == "Gold" then
-		farbe = FARBEN.Gold
-	end
-	zeigeToast(info.Text, farbe)
+	zeigeToast(info.Text, UiKit.FarbeAusName(info.Farbe))
 end)
 
 Net:Event("KaufBestaetigt").OnClientEvent:Connect(function(info)
-	zeigeToast("Gekauft: " .. info.Name, FARBEN.Gut)
+	zeigeToast("Gekauft: " .. info.Name, Farben.Gut)
 
 	-- Kleiner Puls auf dem Panel als Feedback
-	local strich = panel:FindFirstChildOfClass("UIStroke")
-	if strich then
-		strich.Transparency = 0
-		TweenService:Create(strich, TweenInfo.new(0.6), { Transparency = 0.55 }):Play()
-	end
+	panelRand.Transparency = 0
+	TweenService:Create(panelRand, TweenInfo.new(0.6), { Transparency = 0.55 }):Play()
 end)
 
 sammelKnopf.Activated:Connect(function()
@@ -304,11 +249,11 @@ RunService.RenderStepped:Connect(function(deltaZeit)
 		Util.FormatGeld(kapazitaet)
 	)
 	balkenFuellung.Size = UDim2.new(anteil, 0, 1, 0)
-	balkenFuellung.BackgroundColor3 = (anteil >= 0.999) and FARBEN.Warnung or FARBEN.Akzent
+	balkenFuellung.BackgroundColor3 = (anteil >= 0.999) and Farben.Warnung or Farben.Akzent
 
 	local etwasDrin = zustand.Lager > 0
-	sammelKnopf.BackgroundColor3 = etwasDrin and FARBEN.Gut or Color3.fromRGB(60, 68, 88)
-	sammelKnopf.TextColor3 = etwasDrin and Color3.fromRGB(8, 20, 14) or FARBEN.TextGedimmt
+	sammelKnopf.BackgroundColor3 = etwasDrin and Farben.Gut or Farben.Inaktiv
+	sammelKnopf.TextColor3 = etwasDrin and Color3.fromRGB(8, 20, 14) or Farben.TextGedimmt
 	sammelKnopf.Text = etwasDrin
 		and ("SAMMELN  +" .. Util.FormatGeld(zustand.Lager))
 		or "LAGER LEER"

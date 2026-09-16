@@ -24,13 +24,13 @@ Spieler können dir Planeten wieder abnehmen.
 |---|---|---|
 | 1 | **Basis-Tycoon** — Plots, Dropper, Upgrades, Lager, HUD | ✅ fertig |
 | 2 | Speichersystem — DataStore, Auto-Save, Save beim Verlassen | ✅ fertig |
-| 3 | Flotten-System — 4 Schiffsklassen, Werft, Orbit-Anzeige | ⬜ offen |
+| 3 | **Flotten-System** — 5 Schiffsklassen, Werft, Bauwarteschlange, Orbit | ✅ fertig |
 | 4 | Planeten-Eroberung — Kampfformel, Besitz, PvP-Rückeroberung | ⬜ offen |
 | 5 | Prestige / Rebirth | ⬜ offen |
 | 6 | Zusatz-Features — Zufallsereignisse, Tech-Baum, Verteidigung | ⬜ offen |
 | 7 | Monetarisierung — Gamepasses, Entwicklerprodukte | ⬜ offen |
 
-Die Datenfelder für Schritt 3–7 sind im Spielstand **bereits angelegt**, und der
+Die Datenfelder für Schritt 4–7 sind im Spielstand **bereits angelegt**, und der
 Planeten- sowie Rebirth-Bonus steckt schon in der Multiplikator-Formel. Die
 späteren Systeme müssen diese Felder nur noch füllen — kein Umbau nötig.
 
@@ -41,15 +41,18 @@ Die Ordner unter `src/` bilden die Roblox-Explorer-Hierarchie 1:1 ab.
 ```
 src/
 ├── ReplicatedStorage/        → ReplicatedStorage        (Server + Client)
-│   ├── GameConfig.lua            alle Balance-Werte
+│   ├── GameConfig.lua            Balance-Werte Basis-Tycoon
+│   ├── FleetConfig.lua           Balance-Werte Schiffsklassen
 │   ├── Util.lua                  Hilfsfunktionen
 │   ├── Signal.lua                Event-System
+│   ├── UiKit.lua                 GUI-Baukasten (Farben, Knöpfe, Aktionsleiste)
 │   └── Net.lua                   RemoteEvent-Verwaltung
 ├── ServerScriptService/      → ServerScriptService      (nur Server)
 │   ├── Main.server.lua           ★ Einstiegspunkt Server
 │   └── Services/                 die eigentliche Spiellogik
 └── StarterPlayerScripts/     → StarterPlayer > StarterPlayerScripts
-    └── HudClient.client.lua      ★ Einstiegspunkt Client
+    ├── HudClient.client.lua      ★ HUD + Aktionsleiste
+    └── FleetGui.client.lua       Werft-Fenster
 ```
 
 **Dateiendungen** (gängige Roblox-Konvention):

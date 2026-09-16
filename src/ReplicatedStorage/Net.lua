@@ -15,8 +15,8 @@
 
 	BENUTZUNG:
 	    local Net = require(ReplicatedStorage.Net)
-	    Net:Event("GeldUpdate"):FireClient(spieler, daten)   -- Server
-	    Net:Event("GeldUpdate").OnClientEvent:Connect(...)   -- Client
+	    Net:Event("DatenUpdate"):FireClient(spieler, daten)   -- Server
+	    Net:Event("DatenUpdate").OnClientEvent:Connect(...)   -- Client
 	================================================================
 ]]
 
@@ -34,10 +34,14 @@ local EVENT_NAMEN = {
 	"DatenUpdate",       -- Geld, Lager, Multiplikator, Rebirths ...
 	"Benachrichtigung",  -- Toast-Meldung ("Zu wenig Credits!")
 	"KaufBestaetigt",    -- Feedback fuer Sound/Effekt beim Kauf
+	"FlotteUpdate",      -- Flotte, Bauwarteschlange, Hangar, Staerke
 
 	-- Client -> Server
 	"DatenAnfrage",      -- Client bittet um eine frische Kopie seiner Daten
 	"SammelAnfrage",     -- Spieler drueckt den "Sammeln"-Knopf in der GUI
+	"FlotteAnfrage",     -- Client bittet um frische Flottendaten
+	"SchiffBauen",       -- "Ich haette gern N Schiffe der Klasse X"
+	"HangarErweitern",   -- "Ich moechte die naechste Hangar-Stufe kaufen"
 }
 
 -- RemoteFunctions (Client fragt, Server antwortet). Aktuell noch leer,

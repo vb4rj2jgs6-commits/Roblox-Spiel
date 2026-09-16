@@ -45,8 +45,12 @@ local STANDARD_DATEN = {
 	Gekauft = {},        -- ["Dropper_Erz_1"] = true
 	Rebirths = 0,
 
-	-- Platzhalter fuer die naechsten Schritte
+	-- Flotte (Schritt 2)
 	Flotte = {},         -- ["Jaeger"] = 3
+	Bauauftraege = {},   -- { { Klasse = "Jaeger", FertigUm = <Zeitstempel> }, ... }
+	HangarStufe = 0,
+
+	-- Platzhalter fuer die naechsten Schritte
 	Planeten = {},       -- Liste eroberter Planeten-Ids
 	Tech = {},           -- Technologie-Baum
 	Gamepasses = {},     -- Cache, damit wir nicht staendig nachfragen
