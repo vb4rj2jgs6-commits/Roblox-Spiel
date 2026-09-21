@@ -35,6 +35,9 @@ local EVENT_NAMEN = {
 	"Benachrichtigung",  -- Toast-Meldung ("Zu wenig Credits!")
 	"KaufBestaetigt",    -- Feedback fuer Sound/Effekt beim Kauf
 	"FlotteUpdate",      -- Flotte, Bauwarteschlange, Hangar, Staerke
+	"PlanetUpdate",      -- Besitz und Verteidigung aller Planeten
+	"KampfErgebnis",     -- Ergebnis eines Angriffs (Sieg/Niederlage, Verluste)
+	"ImperiumUpdate",    -- Technologien, Rebirth-Stand und Shop
 
 	-- Client -> Server
 	"DatenAnfrage",      -- Client bittet um eine frische Kopie seiner Daten
@@ -42,6 +45,11 @@ local EVENT_NAMEN = {
 	"FlotteAnfrage",     -- Client bittet um frische Flottendaten
 	"SchiffBauen",       -- "Ich haette gern N Schiffe der Klasse X"
 	"HangarErweitern",   -- "Ich moechte die naechste Hangar-Stufe kaufen"
+	"PlanetAnfrage",     -- Client bittet um frische Planetendaten
+	"AngriffStarten",    -- "Ich greife Planet X an" — mehr schickt er nicht
+	"ImperiumAnfrage",   -- Client bittet um Technologie-/Rebirth-Stand
+	"TechKaufen",        -- "Ich moechte Technologie X eine Stufe hoeher"
+	"RebirthStarten",    -- "Ich moechte einen Rebirth machen"
 }
 
 -- RemoteFunctions (Client fragt, Server antwortet). Aktuell noch leer,

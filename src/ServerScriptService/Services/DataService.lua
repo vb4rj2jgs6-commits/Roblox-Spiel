@@ -50,9 +50,13 @@ local STANDARD_DATEN = {
 	Bauauftraege = {},   -- { { Klasse = "Jaeger", FertigUm = <Zeitstempel> }, ... }
 	HangarStufe = 0,
 
-	-- Platzhalter fuer die naechsten Schritte
-	Planeten = {},       -- Liste eroberter Planeten-Ids
-	Tech = {},           -- Technologie-Baum
+	-- Planeten (Schritt 3)
+	Planeten = {},       -- ["P01"] = true
+
+	-- Technologie (Schritt 5)
+	Tech = {},           -- ["Waffensysteme"] = 3
+
+	-- Monetarisierung (Schritt 6)
 	Gamepasses = {},     -- Cache, damit wir nicht staendig nachfragen
 
 	Statistik = {

@@ -1,158 +1,136 @@
-# Einbau in Roblox Studio — Schritt für Schritt
+# Einbau in Roblox Studio
 
-Du brauchst **kein** Rojo und keine Zusatzsoftware. Alles per Copy & Paste.
-Rechne mit ca. 10 Minuten.
-
----
-
-## 0. Neues Projekt anlegen
-
-Roblox Studio → **New** → **Baseplate**.
-Die graue Baseplate löscht das Spiel beim ersten Start automatisch.
+Es gibt zwei Wege. **Weg A ist der empfohlene** — du fügst eine Datei ein und
+bist fertig. Weg B ist die Handarbeit für den Fall, dass du sehen willst, wie
+es aufgebaut ist.
 
 ---
 
-## 1. DataStore freischalten (einmalig, wichtig!)
+## Schritt 0: Neues Projekt + DataStore freischalten
 
-Ohne diesen Schritt kann das Spiel später auf dem echten Server nicht speichern.
+1. Roblox Studio → **New** → **Baseplate**
+   (Die graue Baseplate löscht das Spiel beim ersten Start automatisch.)
+2. **File → Game Settings → Security** → „Enable Studio Access to API Services"
+   einschalten → Speichern
 
-1. In Studio oben: **File → Game Settings → Security**
-2. **„Enable Studio Access to API Services"** einschalten
-3. Speichern
-
-> Solange `GameConfig.Speicher.InStudioSpeichern = false` steht, speichert das
-> Spiel im Studio-Test *absichtlich* nichts. Das ist beim Entwickeln praktisch:
-> Du startest immer mit 0 Credits und kannst den Fortschritt sauber testen.
-> Auf dem echten Roblox-Server wird trotzdem normal gespeichert.
-> Willst du auch im Studio speichern, stelle den Wert auf `true`.
+> Ohne Schritt 2 kann das Spiel später auf dem echten Server nicht speichern.
+> Solange `GameConfig.Speicher.InStudioSpeichern = false` steht, speichert der
+> Studio-Test *absichtlich* nichts — du startest bei jedem Test frisch bei 0
+> Credits. Auf dem echten Roblox-Server wird trotzdem normal gespeichert.
 
 ---
 
-## 2. Ordner und Scripts anlegen
+## Weg A — Ein Klick pro Ordner *(empfohlen)*
 
-Im **Explorer** (Ansicht → Explorer, falls nicht sichtbar).
-Rechtsklick auf einen Ordner → **Insert Object** → passenden Typ wählen.
+Drei Dateien aus dem Ordner `install/` herunterladen:
 
-### 2.1 ReplicatedStorage
+- `ReplicatedStorage.rbxmx`
+- `ServerScriptService.rbxmx`
+- `StarterPlayerScripts.rbxmx`
 
-Rechtsklick auf `ReplicatedStorage` → **Insert Object → ModuleScript**.
-Sechsmal, und jeweils umbenennen (Doppelklick auf den Namen):
+Dann in Studio im **Explorer**:
 
-| Name | Inhalt aus Datei |
-|---|---|
-| `GameConfig` | `src/ReplicatedStorage/GameConfig.lua` |
-| `FleetConfig` | `src/ReplicatedStorage/FleetConfig.lua` |
-| `Util` | `src/ReplicatedStorage/Util.lua` |
-| `Signal` | `src/ReplicatedStorage/Signal.lua` |
-| `UiKit` | `src/ReplicatedStorage/UiKit.lua` |
-| `Net` | `src/ReplicatedStorage/Net.lua` |
+| # | Rechtsklick auf … | → | Datei |
+|---|---|---|---|
+| 1 | `ReplicatedStorage` | **Insert from File…** | `ReplicatedStorage.rbxmx` |
+| 2 | `ServerScriptService` | **Insert from File…** | `ServerScriptService.rbxmx` |
+| 3 | `StarterPlayer` → `StarterPlayerScripts` | **Insert from File…** | `StarterPlayerScripts.rbxmx` |
 
-Bei jedem: Doppelklick öffnet den Editor. Inhalt komplett markieren (`Strg+A`),
-löschen, Datei-Inhalt einfügen.
+Fertig. Alle 26 Scripts liegen an der richtigen Stelle, mit den richtigen Typen
+(ModuleScript / Script / LocalScript) und dem Unterordner `Services`.
 
-> ⚠️ Den Ordner `Remotes` **nicht** selbst anlegen — den erzeugt `Net` beim
-> Serverstart automatisch.
+> **Beim Aktualisieren:** Lösche die alten Objekte vorher, sonst liegen sie
+> doppelt da (Studio hängt „Copy" an den Namen). Am schnellsten: die acht
+> Einträge in `ReplicatedStorage` markieren und löschen, dann `Main` und
+> `Services` in `ServerScriptService`, dann die vier LocalScripts — und neu
+> einfügen.
 
-### 2.2 ServerScriptService
+---
 
-1. Rechtsklick auf `ServerScriptService` → **Insert Object → Script**
-   → umbenennen in **`Main`**
-   → Inhalt aus `src/ServerScriptService/Main.server.lua`
+## Weg A2 — Alles mit einem einzigen Einfügen
 
-   > Achtung: Das ist ein **Script**, kein ModuleScript. Nur ein Script startet
-   > von allein.
+Wenn du lieber gar keine Dateien herunterladen willst:
 
-2. Rechtsklick auf `ServerScriptService` → **Insert Object → Folder**
-   → umbenennen in **`Services`**
+1. `install/INSTALLER.lua` öffnen und **den kompletten Inhalt kopieren**
+2. In Studio: **View → Command Bar** einblenden
+3. In die Befehlsleiste einfügen und **Enter** drücken
 
-3. In diesen Ordner **acht ModuleScripts** einfügen:
+Das Script legt alles an und schreibt in die Konsole:
 
-| Name | Inhalt aus Datei |
-|---|---|
-| `DataService` | `src/ServerScriptService/Services/DataService.lua` |
-| `CurrencyService` | `src/ServerScriptService/Services/CurrencyService.lua` |
-| `WorldBuilder` | `src/ServerScriptService/Services/WorldBuilder.lua` |
-| `PlotService` | `src/ServerScriptService/Services/PlotService.lua` |
-| `ButtonService` | `src/ServerScriptService/Services/ButtonService.lua` |
-| `DropperService` | `src/ServerScriptService/Services/DropperService.lua` |
-| `FleetService` | `src/ServerScriptService/Services/FleetService.lua` |
-| `HangarService` | `src/ServerScriptService/Services/HangarService.lua` |
+```
+================================================
+STELLAR DOMINION installiert: 26 Scripts
+Jetzt auf Play druecken (F5).
+================================================
+```
+
+Ein zweiter Lauf **überschreibt** die vorhandenen Scripts — so spielst du
+Updates ein, ohne vorher etwas zu löschen.
+
+> ⚠️ Die Datei ist ca. 265 KB groß. Manche Studio-Versionen kürzen sehr große
+> Einfügungen in der Befehlsleiste. Kommt eine Syntaxfehlermeldung oder steht
+> am Ende nicht „26 Scripts", nimm Weg A — der hat keine Größenbegrenzung.
+
+---
+
+## Weg B — Von Hand anlegen
+
+Nur nötig, wenn du den Aufbau selbst nachvollziehen willst. Jede Datei aus
+`src/` wird zu einem Objekt im Explorer. Die Dateiendung sagt dir den Typ:
+
+| Endung | Roblox-Typ | Startet von allein? |
+|---|---|---|
+| `.lua` | ModuleScript | nein — wird per `require()` geladen |
+| `.server.lua` | Script | ja, auf dem Server |
+| `.client.lua` | LocalScript | ja, beim Spieler |
+
+Rechtsklick auf den Zielordner → **Insert Object** → passender Typ → umbenennen
+→ Doppelklick → alles markieren (`Strg+A`), löschen, Dateiinhalt einfügen.
 
 > Die Namen müssen **exakt** stimmen (Groß-/Kleinschreibung!), sonst findet
 > `require(script.Parent.XYZ)` das Modul nicht.
-
-### 2.3 StarterPlayerScripts
-
-Im Explorer: `StarterPlayer` aufklappen → `StarterPlayerScripts`.
-Dort **zwei LocalScripts** einfügen (Rechtsklick → **Insert Object → LocalScript**):
-
-| Name | Inhalt aus Datei |
-|---|---|
-| `HudClient` | `src/StarterPlayerScripts/HudClient.client.lua` |
-| `FleetGui` | `src/StarterPlayerScripts/FleetGui.client.lua` |
-
-> `StarterGui` bleibt leer. Das HUD wird per Code erzeugt — so flackert es beim
-> Respawn nicht und du musst nichts zusammenklicken.
+> Den Ordner `Remotes` **nicht** anlegen — den erzeugt `Net` beim Serverstart.
 
 ---
 
-## 3. Fertige Struktur zur Kontrolle
+## Die fertige Struktur zur Kontrolle
 
 ```
 ReplicatedStorage
-├── GameConfig       (ModuleScript)
-├── FleetConfig      (ModuleScript)
+├── GameConfig       (ModuleScript)   Balance Basis-Tycoon
+├── FleetConfig      (ModuleScript)   Balance Schiffe
+├── PlanetConfig     (ModuleScript)   Balance Planeten + Kampfformel
+├── TechConfig       (ModuleScript)   Technologie, Rebirth, Shop-Ids
 ├── Util             (ModuleScript)
 ├── Signal           (ModuleScript)
 ├── UiKit            (ModuleScript)
 └── Net              (ModuleScript)
 
 ServerScriptService
-├── Main             (Script)          ← Script, nicht ModuleScript!
+├── Main             (Script)         ← Script, nicht ModuleScript!
 └── Services         (Folder)
-    ├── DataService      (ModuleScript)
-    ├── CurrencyService  (ModuleScript)
-    ├── WorldBuilder     (ModuleScript)
-    ├── PlotService      (ModuleScript)
-    ├── ButtonService    (ModuleScript)
-    ├── DropperService   (ModuleScript)
-    ├── FleetService     (ModuleScript)
-    └── HangarService    (ModuleScript)
+    ├── DataService         ├── FleetService
+    ├── CurrencyService     ├── HangarService
+    ├── WorldBuilder        ├── PlanetService
+    ├── PlotService         ├── CombatService
+    ├── ButtonService       ├── MonetizationService
+    ├── DropperService      ├── ImperiumService
+    └── EventService
 
 StarterPlayer
 └── StarterPlayerScripts
     ├── HudClient    (LocalScript)
-    └── FleetGui     (LocalScript)
+    ├── FleetGui     (LocalScript)
+    ├── PlanetGui    (LocalScript)
+    └── ImperiumGui  (LocalScript)
 ```
 
 ---
 
-## 4. Testen
+## Testen
 
-**Play** drücken (F5). Erwartetes Verhalten:
+**Play** drücken (F5). In der **Output**-Konsole (View → Output) sollte stehen:
 
-1. Der Bildschirm wird dunkel, Sterne erscheinen, Asteroiden schweben herum
-2. Du landest auf einer Plattform mit blauer Neon-Kante
-3. Oben rechts steht dein HUD (Guthaben, Multiplikator, Lagerbalken)
-4. Vor dir schwebt ein blaues Pad: **„Erz-Extraktor I — GRATIS"**
-5. Drauflaufen → der Extraktor wird gebaut
-6. Alle 2,5 Sekunden fliegt ein Erz-Brocken zum Sammelkern hinten
-7. Der Lagerbalken füllt sich
-8. Zum Sammelkern laufen **oder** oben rechts auf **SAMMELN** drücken
-9. Das nächste Kauf-Pad erscheint rechts
-
-### Flotte testen
-
-10. Links am Bildrand auf **FLOTTE** klicken — oder rechts vorne zur
-    **RAUMWERFT** laufen und den Prompt auslösen
-11. Ein Jäger kostet 2.500 CR. Kurz Credits sammeln, dann **BAUEN +1**
-12. Unten im Fenster läuft der Countdown der Bauwarteschlange
-13. Nach 6 Sekunden erscheint das Schiff — schau nach oben: Es schwebt
-    im Orbit über deinem Plot und dreht sich langsam mit
-14. Mehr als 12 Hangar-Plätze brauchst du für größere Schiffe:
-    **HANGAR ERWEITERN**
-
-In der **Output**-Konsole (Ansicht → Output) sollte stehen:
 ```
 === STELLAR DOMINION startet ===
 [WorldBuilder] Weltraum-Umgebung aufgebaut
@@ -162,71 +140,108 @@ In der **Output**-Konsole (Ansicht → Output) sollte stehen:
 [DropperService] bereit
 [FleetService] bereit
 [HangarService] bereit
+[PlanetService] 12 Planeten gebaut
+[PlanetService] bereit
+[CombatService] bereit
+[MonetizationService] bereit
+[ImperiumService] bereit
+[EventService] bereit
 === STELLAR DOMINION bereit ===
 [Main] DeinName ist beigetreten
 [PlotService] DeinName -> Plot 1
 ```
 
+### Die Runde durchspielen
+
+1. Du stehst auf einer Plattform mit blauer Neon-Kante, ringsum Sterne
+2. Oben rechts das HUD, links die Knöpfe **FLOTTE · PLANETEN · IMPERIUM**
+3. Auf das blaue Pad **„Erz-Extraktor I — GRATIS"** laufen
+4. Alle 2,5 s fliegt ein Erz-Brocken zum Sammelkern, der Lagerbalken füllt sich
+5. **SAMMELN** drücken (oder zum Sammelkern laufen)
+6. Weiter kaufen, bis du 2.500 CR hast
+7. **FLOTTE** → **BAUEN +1** → nach 6 s schwebt ein Jäger über deinem Plot
+8. **PLANETEN** → *Ferra* hat 150 Verteidigung. Ein Jäger hat 12 Angriff →
+   Siegchance ~7 %. Bau also erst ein paar Schiffe mehr
+9. Bei ~60 % Siegchance: **ANGREIFEN**. Die Flotte fliegt 4 s, dann das Ergebnis
+10. Nach der Eroberung färbt sich der Planetenring in deiner Farbe und dein
+    Multiplikator oben rechts springt von x1.00 auf x1.50
+11. **IMPERIUM** → Technologien erforschen, später Rebirth
+
 ### Mit mehreren Spielern testen
-**Test**-Reiter oben → **Clients and Servers** → 2 Players → **Start**.
-Jeder Spieler bekommt automatisch einen eigenen Plot.
+**Test**-Reiter → **Clients and Servers** → 2 Players → **Start**.
+Jeder bekommt einen eigenen Plot; Planeten könnt ihr euch gegenseitig abnehmen.
 
 ---
 
-## 5. Häufige Fehler
+## Häufige Fehler
 
-| Fehlermeldung / Symptom | Ursache und Lösung |
+| Symptom | Ursache und Lösung |
 |---|---|
-| `Infinite yield possible on 'ReplicatedStorage:WaitForChild("GameConfig")'` | Modul fehlt oder heißt anders. Namen im Explorer prüfen. |
-| `attempt to index nil with 'DataService'` | Der Ordner `Services` fehlt oder ist falsch geschrieben. |
-| Nichts passiert beim Play | `Main` ist ein *ModuleScript* statt *Script*. Neu einfügen als Script. |
-| `502: API Services rejected request` | Schritt 1 nicht gemacht (API Services aktivieren). |
-| HUD erscheint nicht | `HudClient` liegt in `StarterGui` statt `StarterPlayerScripts`, oder ist ein *Script* statt *LocalScript*. |
-| Keine Plots sichtbar | Du bist zu weit weg. Die Plots liegen im Raster um den Nullpunkt. |
-| Spieler fällt ins Nichts | `Config.Plot.Hoehe` verändert, aber der Spawn nicht angepasst. |
-| Werft-Fenster öffnet sich nicht | `UiKit` fehlt in `ReplicatedStorage`, oder `FleetGui` liegt nicht in `StarterPlayerScripts`. |
-| Schiffe unsichtbar, obwohl gebaut | Nach oben schauen — der Orbit liegt 75 Studs über dem Plot (`Config.PlotPunkte.Orbit`). |
-| „Die Werft ist ausgelastet" | Warteschlange voll (12 Aufträge). Kurz warten oder `FleetConfig.Allgemein.MaxWarteschlange` erhöhen. |
+| `Infinite yield possible on 'WaitForChild("XYZ")'` | Modul fehlt oder heißt anders. Namen im Explorer prüfen. |
+| `attempt to index nil with 'DataService'` | Ordner `Services` fehlt oder ist falsch geschrieben. |
+| Nichts passiert beim Play | `Main` ist ein *ModuleScript* statt *Script*. |
+| Scripts doppelt („GameConfig", „GameConfig Copy") | Beim Aktualisieren die alten nicht gelöscht. |
+| `502: API Services rejected request` | Schritt 0.2 nicht gemacht. |
+| HUD erscheint nicht | LocalScripts liegen nicht in `StarterPlayerScripts`, oder sind *Scripts* statt *LocalScripts*. |
+| Keine Plots sichtbar | Zu weit weg — die Plots liegen im Raster um den Nullpunkt. |
+| Schiffe unsichtbar, obwohl gebaut | Nach oben schauen: Orbit liegt 75 Studs über dem Plot. |
+| Shop zeigt nur „BALD VERFÜGBAR" | Normal. Die Ids in `TechConfig` stehen alle auf 0 — siehe unten. |
+| Angriff tut nichts | Cooldown (30 s), Schutzschild des Gegners, oder keine Schiffe. Die Toast-Meldung sagt es dir. |
 
 ---
 
-## 6. Balancing anpassen
+## Balancing
 
-Alles in `GameConfig`:
+Alles in den vier Config-Modulen, kein anderes Script muss angefasst werden.
 
 ```lua
-Config.DropperTypen.Erz.Betrag = 4        -- Credits pro Lieferung
-Config.DropperTypen.Erz.Intervall = 2.5   -- Sekunden zwischen Lieferungen
-Config.Lager.Startkapazitaet = 300        -- ab wann das Lager voll ist
+-- GameConfig: Basis-Tycoon
+Config.DropperTypen.Erz.Betrag = 4            -- Credits pro Lieferung
+Config.DropperTypen.Erz.Intervall = 2.5       -- Sekunden dazwischen
 Config.Multiplikatoren.BonusProPlanet = 0.5   -- +50 % pro Planet
-Config.Plot.Anzahl = 6                    -- Spieler pro Server
-```
+Config.Plot.Anzahl = 6                        -- Spieler pro Server
 
-Einen neuen Dropper hinzufügen? Einen Eintrag in `Config.Kaufbares` ergänzen:
-
-```lua
-{ Id = "Dropper_Erz_3", Name = "Erz-Extraktor III", Preis = 2000,
-  Benoetigt = "Lager_1", Typ = "Dropper", DropperTyp = "Erz",
-  Position = Vector3.new(-40, 0, -56), ButtonPos = Vector3.new(-24, 0, -56) },
-```
-
-Mehr ist nicht nötig — Button, Modell, Speicherung und Freischaltlogik
-entstehen automatisch.
-
-### Flotte balancen
-
-Alles in `FleetConfig`:
-
-```lua
+-- FleetConfig: Schiffe
 FleetConfig.Allgemein.BasisKapazitaet = 12    -- Hangar-Plätze am Anfang
 FleetConfig.Allgemein.MaxSichtbar = 24        -- Schiffe im Orbit (Performance!)
-FleetConfig.Allgemein.MaxWarteschlange = 12   -- gleichzeitige Bauaufträge
+
+-- PlanetConfig: Eroberung
+PlanetConfig.Kampf.AngriffsCooldown = 30
+PlanetConfig.Kampf.SchildNachEroberung = 180
+PlanetConfig.Planeten[1].Verteidigung = 150
+
+-- TechConfig: Langzeit
+TechConfig.Rebirth.Grundschwelle = 250000
+TechConfig.Ereignisse.MinAbstand = 180        -- Sekunden zwischen Ereignissen
 ```
 
-Eine neue Schiffsklasse ist ein weiterer Eintrag in `FleetConfig.Klassen` —
-Werft-Zeile, 3D-Modell und Validierung entstehen daraus automatisch. Auf
-Handys lohnt es sich, `MaxSichtbar` auf 12–16 zu senken.
+**Auf Handys** lohnt sich `FleetConfig.Allgemein.MaxSichtbar = 12`.
 
-> ⚠️ Einmal veröffentlichte `Id`-Werte **nie** umbenennen. Die Ids stehen so in
-> den Spielständen. Eine geänderte Id bedeutet für alle Spieler: Objekt weg,
-> Geld weg.
+> ⚠️ Einmal veröffentlichte `Id`-Werte **nie** umbenennen. Sie stehen so in den
+> Spielständen. Eine geänderte Id bedeutet für alle Spieler: Objekt weg, Geld weg.
+
+### Nach Änderungen die Installationsdateien neu erzeugen
+
+```bash
+python3 tools/build_installer.py
+```
+
+---
+
+## Gamepasses und Produkte aktivieren
+
+Alle Ids in `TechConfig` stehen auf `0` = „noch nicht angelegt". Der Server
+überspringt sie dann, und im Shop steht „BALD VERFÜGBAR". Das Spiel läuft also
+vollständig ohne Monetarisierung.
+
+So schaltest du sie frei:
+
+1. **Creator Dashboard** → dein Spiel → **Monetization**
+2. **Passes → Create Pass** bzw. **Developer Products → Create**
+3. Die Id aus der URL (`…/game-pass/1234567/…`) in `TechConfig` eintragen:
+
+```lua
+{ Schluessel = "DoppeltesEinkommen", Id = 1234567, ... }
+```
+
+Mehr ist nicht nötig — Abfrage, Freischaltung und `ProcessReceipt` sind fertig.

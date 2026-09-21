@@ -23,6 +23,8 @@
 	  6. ButtonService/DropperService — brauchen die Plots
 	  7. FleetService — muss vor HangarService laufen
 	  8. HangarService — braucht Plots UND FleetService
+	  9. PlanetService/CombatService — brauchen die Flotte
+	 10. Monetarisierung, Imperium, Ereignisse
 	================================================================
 ]]
 
@@ -42,6 +44,11 @@ local ButtonService = require(Services.ButtonService)
 local DropperService = require(Services.DropperService)
 local FleetService = require(Services.FleetService)
 local HangarService = require(Services.HangarService)
+local PlanetService = require(Services.PlanetService)
+local CombatService = require(Services.CombatService)
+local MonetizationService = require(Services.MonetizationService)
+local ImperiumService = require(Services.ImperiumService)
+local EventService = require(Services.EventService)
 
 print(("=== %s startet ==="):format(Config.Spiel.Name))
 
@@ -62,6 +69,13 @@ DropperService:Init()
 FleetService:Init()
 HangarService:Init()
 
+PlanetService:Init(welt)
+CombatService:Init()
+
+MonetizationService:Init()
+ImperiumService:Init()
+EventService:Init()
+
 -- ================================================================
 -- 2) SPIELER-LEBENSZYKLUS
 -- ================================================================
@@ -81,6 +95,15 @@ local function spielerBetritt(spieler: Player)
 	-- Holt Schiffe nach, die waehrend der Offline-Zeit fertig geworden sind,
 	-- und schickt dem Client seinen Flottenstand.
 	FleetService:SpielerVorbereiten(spieler)
+
+	-- Gespeicherte Planeten zurueckgeben, soweit sie hier noch frei sind
+	PlanetService:SpielerVorbereiten(spieler)
+
+	-- Gamepasses abfragen (laeuft im Hintergrund weiter)
+	MonetizationService:SpielerVorbereiten(spieler)
+
+	-- Orbitalgeschuetze aufstellen und Technologie-/Shop-Stand schicken
+	ImperiumService:SpielerVorbereiten(spieler)
 
 	CurrencyService:Senden(spieler)
 

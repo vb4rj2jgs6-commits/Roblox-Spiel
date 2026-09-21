@@ -640,6 +640,32 @@ function PlotService:Freigeben(spieler: Player)
 	log("Plot " .. plot.Index .. " freigegeben")
 end
 
+-- Baut den Plot komplett neu aus dem Spielstand auf.
+-- Wird beim Rebirth gebraucht: erst wird der Spielstand zurueckgesetzt,
+-- dann raeumt diese Funktion die Station leer und stellt sie wieder her.
+-- Das Zugewiesen-Signal am Ende laesst ButtonService, HangarService und
+-- ImperiumService ihre Teile ebenfalls neu aufbauen.
+function PlotService:NeuAufbauen(spieler: Player)
+	local plot = spielerPlot[spieler]
+	if not plot then
+		return
+	end
+
+	plotLeeren(plot)
+
+	local daten = DataService:Get(spieler)
+	if daten then
+		for _, eintrag in Config.Kaufbares do
+			if daten.Gekauft[eintrag.Id] then
+				self:BaueObjekt(plot, eintrag)
+			end
+		end
+	end
+
+	self:NeuBerechnen(plot)
+	self.Zugewiesen:FeuernSofort(spieler, plot)
+end
+
 -- Setzt den Spieler auf sein Spawn-Pad.
 function PlotService:ZumPlotTeleportieren(spieler: Player)
 	local plot = spielerPlot[spieler]

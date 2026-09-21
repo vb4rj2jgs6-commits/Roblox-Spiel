@@ -1,0 +1,1821 @@
+<roblox xmlns:xmime="http://www.w3.org/2005/05/xmlmime" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.roblox.com/roblox.xsd" version="4">
+  <Item class="LocalScript" referent="RBX24">
+    <Properties>
+      <string name="Name">FleetGui</string>
+      <ProtectedString name="Source"><![CDATA[--[[
+	FleetGui  —  LocalScript
+	================================================================
+	EXPLORER-ORT:  StarterPlayer > StarterPlayerScripts > FleetGui
+
+	WARUM EIN EIGENES SCRIPT STATT ALLES IN HudClient?
+	Ein Script pro Fenster. HudClient kennt die Werft nicht und die
+	Werft kennt das HUD nicht — sie treffen sich nur ueber die
+	Aktionsleiste, die UiKit verwaltet. Schritt 3 (Planeten) bekommt
+	spaeter genauso ein eigenes Script und haengt sich einen weiteren
+	Knopf in dieselbe Leiste.
+
+	OEFFNEN GEHT AUF ZWEI WEGEN:
+	  1. Knopf "FLOTTE" in der Aktionsleiste (funktioniert überall,
+	     wichtig fuer Handys)
+	  2. ProximityPrompt an der Werft auf dem eigenen Plot
+
+	WICHTIG (Exploit-Schutz):
+	Beim Klick auf "BAUEN" schickt der Client nur Klassenname und
+	Anzahl. Preis, Hangar-Platz und Kontostand prueft ausschliesslich
+	der FleetService auf dem Server. Die Farben hier (gruen/rot) sind
+	reine Anzeige — sie entscheiden gar nichts.
+	================================================================
+]]
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local CollectionService = game:GetService("CollectionService")
+local TweenService = game:GetService("TweenService")
+
+local Config = require(ReplicatedStorage:WaitForChild("GameConfig"))
+local FleetConfig = require(ReplicatedStorage:WaitForChild("FleetConfig"))
+local Util = require(ReplicatedStorage:WaitForChild("Util"))
+local Net = require(ReplicatedStorage:WaitForChild("Net"))
+local UiKit = require(ReplicatedStorage:WaitForChild("UiKit"))
+
+local spieler = Players.LocalPlayer
+local spielerGui = spieler:WaitForChild("PlayerGui")
+local Farben = UiKit.Farben
+
+-- ================================================================
+-- ZUSTAND (alles kommt vom Server, nichts wird hier ausgerechnet)
+-- ================================================================
+local stand = {
+	Flotte = {},
+	Warteschlange = {},
+	Staerke = 0,
+	Verteidigung = 0,
+	Kapazitaet = FleetConfig.Allgemein.BasisKapazitaet,
+	Belegt = 0,
+	HangarStufe = 0,
+	HangarPreis = FleetConfig.HangarPreis(0),
+	Freigeschaltet = {},
+}
+
+local geld = 0
+
+-- Uhr-Abgleich: Die Uhr des Spielers kann von der Serveruhr abweichen.
+-- Wir merken uns beim Empfang beide Zeiten und rechnen die Serverzeit
+-- daraus fluessig hoch — sonst wuerde der Countdown sekundenweise springen.
+local zeitBasis = { Serverzeit = os.time(), Clock = os.clock() }
+
+local function jetztServer(): number
+	return zeitBasis.Serverzeit + (os.clock() - zeitBasis.Clock)
+end
+
+-- ================================================================
+-- FENSTER AUFBAUEN
+-- ================================================================
+local gui = UiKit.Neu("ScreenGui", {
+	Name = "WerftGui",
+	ResetOnSpawn = false,
+	DisplayOrder = 5,
+	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+}, spielerGui)
+
+-- Abdunkelnder Hintergrund. Klick darauf schliesst das Fenster.
+-- Bewusst ein TextButton und kein Frame: nur Knoepfe melden Klicks.
+local hintergrund = UiKit.Neu("TextButton", {
+	Name = "Hintergrund",
+	Size = UDim2.fromScale(1, 1),
+	BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+	BackgroundTransparency = 0.45,
+	BorderSizePixel = 0,
+	AutoButtonColor = false,
+	Text = "",
+	Visible = false,
+}, gui)
+
+local panel = UiKit.Neu("Frame", {
+	Name = "Panel",
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.fromScale(0.5, 0.5),
+	Size = UDim2.new(0.92, 0, 0.88, 0),
+	BackgroundColor3 = Farben.Panel,
+	BorderSizePixel = 0,
+	-- Active = true laesst das Panel Klicks schlucken. Ohne das wuerde ein
+	-- Klick mitten ins Fenster den Hintergrund-Knopf darunter ausloesen und
+	-- die Werft sofort wieder schliessen.
+	Active = true,
+}, hintergrund)
+UiKit.Ecken(panel, 14)
+UiKit.Rand(panel, Farben.PanelRand, 1.5, 0.45)
+UiKit.Abstand(panel, 12)
+
+UiKit.Neu("UISizeConstraint", {
+	MaxSize = Vector2.new(640, 560),
+	MinSize = Vector2.new(280, 320),
+}, panel)
+
+-- ---------- Kopfzeile ----------
+UiKit.Text({
+	Name = "Titel",
+	Size = UDim2.new(1, -44, 0, 26),
+	Font = Enum.Font.GothamBlack,
+	TextSize = 20,
+	Text = "RAUMWERFT",
+}, panel)
+
+UiKit.Text({
+	Name = "Untertitel",
+	Position = UDim2.new(0, 0, 0, 24),
+	Size = UDim2.new(1, -44, 0, 14),
+	TextSize = 11,
+	TextColor3 = Farben.TextGedimmt,
+	Text = "Schiffe bauen · Hangar erweitern",
+}, panel)
+
+local schliessen = UiKit.Knopf({
+	Name = "Schliessen",
+	AnchorPoint = Vector2.new(1, 0),
+	Position = UDim2.new(1, 0, 0, 0),
+	Size = UDim2.new(0, 34, 0, 34),
+	BackgroundColor3 = Farben.PanelHell,
+	TextColor3 = Farben.Text,
+	TextSize = 16,
+	Text = "✕",
+}, panel)
+
+-- ---------- Statusleiste ----------
+local statusLeiste = UiKit.Neu("Frame", {
+	Name = "Status",
+	Position = UDim2.new(0, 0, 0, 48),
+	Size = UDim2.new(1, 0, 0, 62),
+	BackgroundTransparency = 1,
+}, panel)
+
+local function baueKachel(reihenfolge: number, titel: string)
+	local kachel = UiKit.Neu("Frame", {
+		Name = titel,
+		LayoutOrder = reihenfolge,
+		Size = UDim2.new(0.5, -4, 1, 0),
+		BackgroundColor3 = Farben.PanelHell,
+		BorderSizePixel = 0,
+	}, statusLeiste)
+	UiKit.Ecken(kachel, 10)
+
+	UiKit.Text({
+		Position = UDim2.new(0, 10, 0, 9),
+		Size = UDim2.new(1, -20, 0, 12),
+		TextSize = 10,
+		TextColor3 = Farben.TextGedimmt,
+		Text = titel,
+	}, kachel)
+
+	local wert = UiKit.Text({
+		Name = "Wert",
+		Position = UDim2.new(0, 10, 0, 24),
+		Size = UDim2.new(1, -20, 0, 26),
+		Font = Enum.Font.GothamBlack,
+		TextSize = 19,
+		Text = "0",
+	}, kachel)
+
+	return wert
+end
+
+UiKit.Neu("UIListLayout", {
+	FillDirection = Enum.FillDirection.Horizontal,
+	SortOrder = Enum.SortOrder.LayoutOrder,
+	Padding = UDim.new(0, 8),
+}, statusLeiste)
+
+local staerkeWert = baueKachel(1, "FLOTTENSTÄRKE")
+local hangarWert = baueKachel(2, "HANGAR-PLÄTZE")
+
+-- ---------- Hangar-Ausbau ----------
+local hangarKnopf = UiKit.Knopf({
+	Name = "HangarAusbau",
+	Position = UDim2.new(0, 0, 0, 118),
+	Size = UDim2.new(1, 0, 0, 32),
+	BackgroundColor3 = Farben.PanelHell,
+	TextColor3 = Farben.Gold,
+	TextSize = 13,
+	Text = "HANGAR ERWEITERN",
+}, panel)
+UiKit.Rand(hangarKnopf, Farben.Gold, 1, 0.6)
+
+-- ---------- Schiffsliste ----------
+local liste = UiKit.Neu("ScrollingFrame", {
+	Name = "Schiffe",
+	Position = UDim2.new(0, 0, 0, 158),
+	Size = UDim2.new(1, 0, 1, -250),
+	BackgroundTransparency = 1,
+	BorderSizePixel = 0,
+	CanvasSize = UDim2.new(),
+	AutomaticCanvasSize = Enum.AutomaticSize.Y,
+	ScrollBarThickness = 5,
+	ScrollBarImageColor3 = Farben.PanelRand,
+	ScrollingDirection = Enum.ScrollingDirection.Y,
+}, panel)
+
+UiKit.Neu("UIListLayout", {
+	FillDirection = Enum.FillDirection.Vertical,
+	SortOrder = Enum.SortOrder.LayoutOrder,
+	Padding = UDim.new(0, 8),
+}, liste)
+
+UiKit.Neu("UIPadding", { PaddingRight = UDim.new(0, 8) }, liste)
+
+-- ---------- Warteschlange ----------
+local warteRahmen = UiKit.Neu("Frame", {
+	Name = "Warteschlange",
+	AnchorPoint = Vector2.new(0, 1),
+	Position = UDim2.new(0, 0, 1, 0),
+	Size = UDim2.new(1, 0, 0, 84),
+	BackgroundColor3 = Farben.PanelHell,
+	BorderSizePixel = 0,
+}, panel)
+UiKit.Ecken(warteRahmen, 10)
+
+UiKit.Text({
+	Position = UDim2.new(0, 12, 0, 10),
+	Size = UDim2.new(1, -24, 0, 12),
+	TextSize = 10,
+	TextColor3 = Farben.TextGedimmt,
+	Text = "BAUWARTESCHLANGE",
+}, warteRahmen)
+
+local warteText = UiKit.Text({
+	Name = "Info",
+	Position = UDim2.new(0, 12, 0, 26),
+	Size = UDim2.new(1, -24, 0, 20),
+	Font = Enum.Font.GothamBold,
+	TextSize = 14,
+	Text = "Werft im Leerlauf",
+}, warteRahmen)
+
+local warteBalkenHuelle = UiKit.Neu("Frame", {
+	Position = UDim2.new(0, 12, 0, 52),
+	Size = UDim2.new(1, -24, 0, 8),
+	BackgroundColor3 = Color3.fromRGB(35, 40, 58),
+	BorderSizePixel = 0,
+}, warteRahmen)
+UiKit.Ecken(warteBalkenHuelle, 4)
+
+local warteBalken = UiKit.Neu("Frame", {
+	Size = UDim2.new(0, 0, 1, 0),
+	BackgroundColor3 = Farben.Akzent,
+	BorderSizePixel = 0,
+}, warteBalkenHuelle)
+UiKit.Ecken(warteBalken, 4)
+
+local warteRest = UiKit.Text({
+	Position = UDim2.new(0, 12, 0, 64),
+	Size = UDim2.new(1, -24, 0, 12),
+	TextSize = 10,
+	TextColor3 = Farben.TextGedimmt,
+	Text = "",
+}, warteRahmen)
+
+-- ================================================================
+-- SCHIFFSZEILEN
+-- ================================================================
+local zeilen: { [string]: any } = {}
+
+local function baueSchiffZeile(klasse: any)
+	local zeile = UiKit.Neu("Frame", {
+		Name = klasse.Id,
+		LayoutOrder = klasse.Reihenfolge,
+		Size = UDim2.new(1, 0, 0, 78),
+		BackgroundColor3 = Farben.PanelHell,
+		BorderSizePixel = 0,
+	}, liste)
+	UiKit.Ecken(zeile, 10)
+
+	-- Farbstreifen links: gleiche Farbe wie das Schiff im Orbit
+	local streifen = UiKit.Neu("Frame", {
+		Size = UDim2.new(0, 4, 1, -16),
+		Position = UDim2.new(0, 8, 0, 8),
+		BackgroundColor3 = klasse.Akzent,
+		BorderSizePixel = 0,
+	}, zeile)
+	UiKit.Ecken(streifen, 2)
+
+	UiKit.Text({
+		Position = UDim2.new(0, 20, 0, 8),
+		Size = UDim2.new(1, -200, 0, 18),
+		Font = Enum.Font.GothamBold,
+		TextSize = 15,
+		Text = klasse.Name,
+	}, zeile)
+
+	UiKit.Text({
+		Position = UDim2.new(0, 20, 0, 27),
+		Size = UDim2.new(1, -200, 0, 14),
+		TextSize = 11,
+		TextColor3 = Farben.TextGedimmt,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		Text = klasse.Beschreibung,
+	}, zeile)
+
+	UiKit.Text({
+		Position = UDim2.new(0, 20, 0, 46),
+		Size = UDim2.new(1, -200, 0, 14),
+		TextSize = 11,
+		TextColor3 = klasse.Akzent,
+		Text = string.format(
+			"ANG %s  ·  VTG %s  ·  %d Plätze  ·  %ds",
+			Util.FormatGeld(klasse.Angriff),
+			Util.FormatGeld(klasse.Verteidigung),
+			klasse.Platzbedarf,
+			klasse.Bauzeit
+		),
+	}, zeile)
+
+	local preisLabel = UiKit.Text({
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -10, 0, 8),
+		Size = UDim2.new(0, 170, 0, 18),
+		Font = Enum.Font.GothamBold,
+		TextSize = 14,
+		TextXAlignment = Enum.TextXAlignment.Right,
+		TextColor3 = Farben.Gut,
+		Text = Util.FormatGeld(klasse.Preis) .. " " .. Config.Spiel.Waehrung,
+	}, zeile)
+
+	local besitzLabel = UiKit.Text({
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -10, 0, 27),
+		Size = UDim2.new(0, 170, 0, 14),
+		TextSize = 11,
+		TextXAlignment = Enum.TextXAlignment.Right,
+		TextColor3 = Farben.Gold,
+		Text = "Im Hangar: 0",
+	}, zeile)
+
+	local knopf1 = UiKit.Knopf({
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -96, 0, 46),
+		Size = UDim2.new(0, 78, 0, 24),
+		TextSize = 12,
+		Text = "BAUEN  +1",
+	}, zeile)
+
+	local knopf5 = UiKit.Knopf({
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -10, 0, 46),
+		Size = UDim2.new(0, 78, 0, 24),
+		TextSize = 12,
+		Text = "+5",
+	}, zeile)
+
+	knopf1.Activated:Connect(function()
+		Net:Event("SchiffBauen"):FireServer(klasse.Id, 1)
+	end)
+	knopf5.Activated:Connect(function()
+		Net:Event("SchiffBauen"):FireServer(klasse.Id, 5)
+	end)
+
+	zeilen[klasse.Id] = {
+		Rahmen = zeile,
+		Preis = preisLabel,
+		Besitz = besitzLabel,
+		Knopf1 = knopf1,
+		Knopf5 = knopf5,
+	}
+end
+
+for _, klasse in FleetConfig.Klassen do
+	baueSchiffZeile(klasse)
+end
+
+-- ================================================================
+-- ANZEIGE AKTUALISIEREN
+-- ================================================================
+local function aktualisiereStatus()
+	staerkeWert.Text = Util.FormatGeld(stand.Staerke)
+	hangarWert.Text = string.format("%d / %d", stand.Belegt, stand.Kapazitaet)
+	hangarWert.TextColor3 = (stand.Belegt >= stand.Kapazitaet) and Farben.Warnung or Farben.Text
+
+	if stand.HangarPreis then
+		local bezahlbar = geld >= stand.HangarPreis
+		hangarKnopf.Text = string.format(
+			"HANGAR ERWEITERN  ·  Stufe %d  ·  %s %s",
+			stand.HangarStufe + 1,
+			Util.FormatGeld(stand.HangarPreis),
+			Config.Spiel.Waehrung
+		)
+		hangarKnopf.TextColor3 = bezahlbar and Farben.Gold or Farben.TextGedimmt
+	else
+		hangarKnopf.Text = "HANGAR VOLL AUSGEBAUT"
+		hangarKnopf.TextColor3 = Farben.TextGedimmt
+	end
+end
+
+local function aktualisiereZeilen()
+	for _, klasse in FleetConfig.Klassen do
+		local zeile = zeilen[klasse.Id]
+		if not zeile then
+			continue
+		end
+
+		local anzahl = stand.Flotte[klasse.Id] or 0
+		zeile.Besitz.Text = "Im Hangar: " .. anzahl
+
+		-- Freigeschaltet[...] kommt vom Server. Fehlt der Eintrag noch
+		-- (erstes Update noch nicht da), gehen wir von "offen" aus.
+		local frei = stand.Freigeschaltet[klasse.Id]
+		if frei == nil then
+			frei = klasse.NurGamepass == nil
+		end
+
+		local passtInHangar = (stand.Belegt + klasse.Platzbedarf) <= stand.Kapazitaet
+		local bezahlbar = geld >= klasse.Preis
+		local kaufbar = frei and passtInHangar and bezahlbar
+
+		if not frei then
+			zeile.Preis.Text = "GESPERRT"
+			zeile.Preis.TextColor3 = Farben.TextGedimmt
+			zeile.Knopf1.Text = "GAMEPASS"
+			zeile.Knopf5.Text = "—"
+		else
+			zeile.Preis.Text = Util.FormatGeld(klasse.Preis) .. " " .. Config.Spiel.Waehrung
+			zeile.Preis.TextColor3 = bezahlbar and Farben.Gut or Farben.Warnung
+			zeile.Knopf1.Text = "BAUEN  +1"
+			zeile.Knopf5.Text = "+5"
+		end
+
+		local knopfFarbe = kaufbar and Farben.Akzent or Farben.Inaktiv
+		local schriftFarbe = kaufbar and Color3.fromRGB(8, 16, 24) or Farben.TextGedimmt
+		zeile.Knopf1.BackgroundColor3 = knopfFarbe
+		zeile.Knopf1.TextColor3 = schriftFarbe
+		zeile.Knopf5.BackgroundColor3 = knopfFarbe
+		zeile.Knopf5.TextColor3 = schriftFarbe
+	end
+end
+
+local function aktualisiereWarteschlange()
+	local anzahl = #stand.Warteschlange
+
+	if anzahl == 0 then
+		warteText.Text = "Werft im Leerlauf"
+		warteText.TextColor3 = Farben.TextGedimmt
+		warteBalken.Size = UDim2.new(0, 0, 1, 0)
+		warteRest.Text = ""
+		return
+	end
+
+	local naechster = stand.Warteschlange[1]
+	local klasse = FleetConfig.NachId[naechster.Klasse]
+	local jetzt = jetztServer()
+
+	-- StartUm kann bei sehr alten Spielstaenden fehlen -> aus der Bauzeit
+	-- der Klasse zurueckrechnen.
+	local startUm = naechster.StartUm
+		or (naechster.FertigUm - (klasse and klasse.Bauzeit or 1))
+
+	local dauer = math.max(1, naechster.FertigUm - startUm)
+	local fortschritt = math.clamp((jetzt - startUm) / dauer, 0, 1)
+	local restZeit = math.max(0, naechster.FertigUm - jetzt)
+
+	warteText.Text = string.format(
+		"%s  —  %s",
+		klasse and klasse.Name or naechster.Klasse,
+		Util.FormatZeit(restZeit)
+	)
+	warteText.TextColor3 = Farben.Text
+	warteBalken.Size = UDim2.new(fortschritt, 0, 1, 0)
+
+	local gesamtRest = math.max(0, stand.Warteschlange[anzahl].FertigUm - jetzt)
+	warteRest.Text = anzahl == 1
+		and "Letztes Schiff in der Warteschlange"
+		or string.format("noch %d weitere  ·  alles fertig in %s", anzahl - 1, Util.FormatZeit(gesamtRest))
+end
+
+local function aktualisiereAlles()
+	aktualisiereStatus()
+	aktualisiereZeilen()
+	aktualisiereWarteschlange()
+end
+
+-- ================================================================
+-- SERVER-EREIGNISSE
+-- ================================================================
+Net:Event("FlotteUpdate").OnClientEvent:Connect(function(daten)
+	for schluessel, wert in daten do
+		if schluessel == "Serverzeit" then
+			zeitBasis.Serverzeit = wert
+			zeitBasis.Clock = os.clock()
+		else
+			stand[schluessel] = wert
+		end
+	end
+	aktualisiereAlles()
+end)
+
+-- Fuer die Preisfarben brauchen wir auch den Kontostand.
+Net:Event("DatenUpdate").OnClientEvent:Connect(function(daten)
+	if daten.Geld then
+		geld = daten.Geld
+	end
+end)
+
+hangarKnopf.Activated:Connect(function()
+	Net:Event("HangarErweitern"):FireServer()
+end)
+
+-- ================================================================
+-- OEFFNEN / SCHLIESSEN
+-- ================================================================
+local offen = false
+
+local function setzeOffen(neuerZustand: boolean)
+	offen = neuerZustand
+	hintergrund.Visible = offen
+
+	if offen then
+		-- Frische Daten holen und eine kleine Aufzieh-Animation abspielen
+		Net:Event("FlotteAnfrage"):FireServer()
+		aktualisiereAlles()
+
+		panel.Size = UDim2.new(0.92, 0, 0.8, 0)
+		TweenService:Create(
+			panel,
+			TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+			{ Size = UDim2.new(0.92, 0, 0.88, 0) }
+		):Play()
+	end
+end
+
+schliessen.Activated:Connect(function()
+	setzeOffen(false)
+end)
+
+hintergrund.Activated:Connect(function()
+	-- Klick neben das Panel schliesst das Fenster
+	setzeOffen(false)
+end)
+
+local werftKnopf = UiKit.LeistenKnopf("FLOTTE", 10)
+werftKnopf.Activated:Connect(function()
+	setzeOffen(not offen)
+end)
+
+-- ProximityPrompt an der Werft. CollectionService:GetTagged liefert alle
+-- Objekte, die der Server mit dem Tag "WerftPrompt" markiert hat.
+local function verbindePrompt(prompt: Instance)
+	if not prompt:IsA("ProximityPrompt") then
+		return
+	end
+	prompt.Triggered:Connect(function(ausloeser)
+		if ausloeser == spieler then
+			setzeOffen(true)
+		end
+	end)
+end
+
+for _, prompt in CollectionService:GetTagged("WerftPrompt") do
+	verbindePrompt(prompt)
+end
+CollectionService:GetInstanceAddedSignal("WerftPrompt"):Connect(verbindePrompt)
+
+-- ================================================================
+-- COUNTDOWN LAUFEN LASSEN
+-- Nur wenn das Fenster offen ist — geschlossen kostet es nichts.
+-- ================================================================
+RunService.RenderStepped:Connect(function()
+	if offen then
+		aktualisiereWarteschlange()
+		aktualisiereStatus()
+		aktualisiereZeilen()
+	end
+end)
+
+task.defer(function()
+	Net:Event("FlotteAnfrage"):FireServer()
+end)
+
+print("[FleetGui] Werft bereit")
+]]></ProtectedString>
+    </Properties>
+  </Item>
+  <Item class="LocalScript" referent="RBX25">
+    <Properties>
+      <string name="Name">HudClient</string>
+      <ProtectedString name="Source"><![CDATA[--[[
+	HudClient  —  LocalScript
+	================================================================
+	EXPLORER-ORT:  StarterPlayer > StarterPlayerScripts > HudClient
+
+	WARUM DORT UND NICHT IN StarterGui?
+	StarterPlayerScripts-Scripts laufen genau EINMAL pro Spieler und
+	ueberleben den Tod der Spielfigur. Ein LocalScript in StarterGui
+	wuerde bei jedem Respawn neu starten — und damit die GUI neu
+	aufbauen. Wir erzeugen die ScreenGui hier per Code und haengen sie
+	in die PlayerGui. Ergebnis: Du musst im Explorer nichts von Hand
+	zusammenklicken, und die Anzeige flackert beim Respawn nicht.
+
+	DIESES SCRIPT BAUT AUSSERDEM DIE AKTIONSLEISTE (links am Rand).
+	Andere Client-Scripts (Werft, spaeter Planeten) haengen sich dort
+	mit einer Zeile einen Knopf hinein — sie muessen dieses Script
+	nicht kennen und nicht aendern.
+
+	WICHTIG (Exploit-Schutz):
+	Dieses Script zeigt nur an, was der Server schickt. Es RECHNET
+	nichts aus. Wenn ein Exploiter hier Zahlen aendert, sieht nur er
+	selbst eine falsche Zahl — sein echtes Guthaben auf dem Server
+	bleibt unveraendert.
+	================================================================
+]]
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+
+local Config = require(ReplicatedStorage:WaitForChild("GameConfig"))
+local Util = require(ReplicatedStorage:WaitForChild("Util"))
+local Net = require(ReplicatedStorage:WaitForChild("Net"))
+local UiKit = require(ReplicatedStorage:WaitForChild("UiKit"))
+
+local spieler = Players.LocalPlayer
+local spielerGui = spieler:WaitForChild("PlayerGui")
+local Farben = UiKit.Farben
+
+-- ================================================================
+-- GRUNDGERUEST
+-- ================================================================
+local hud = UiKit.Neu("ScreenGui", {
+	Name = "HUD",
+	ResetOnSpawn = false,          -- ueberlebt den Respawn
+	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+}, spielerGui)
+
+UiKit.ErstelleAktionsleiste(hud)
+
+-- ================================================================
+-- WAEHRUNGSPANEL (oben rechts)
+-- ================================================================
+local panel = UiKit.Neu("Frame", {
+	Name = "Waehrungspanel",
+	AnchorPoint = Vector2.new(1, 0),
+	Position = UDim2.new(1, -12, 0, 12),
+	Size = UDim2.new(0, 246, 0, 164),
+	BackgroundColor3 = Farben.Panel,
+	BackgroundTransparency = 0.12,
+	BorderSizePixel = 0,
+}, hud)
+UiKit.Ecken(panel, 12)
+local panelRand = UiKit.Rand(panel, Farben.PanelRand, 1.5, 0.55)
+UiKit.Neu("UIPadding", {
+	PaddingTop = UDim.new(0, 10),
+	PaddingBottom = UDim.new(0, 10),
+	PaddingLeft = UDim.new(0, 12),
+	PaddingRight = UDim.new(0, 12),
+}, panel)
+
+UiKit.Text({
+	Name = "Ueberschrift",
+	Size = UDim2.new(1, 0, 0, 14),
+	TextSize = 11,
+	TextColor3 = Farben.TextGedimmt,
+	Text = "GUTHABEN",
+}, panel)
+
+local geldLabel = UiKit.Text({
+	Name = "Geld",
+	Position = UDim2.new(0, 0, 0, 16),
+	Size = UDim2.new(1, 0, 0, 34),
+	Font = Enum.Font.GothamBlack,
+	TextSize = 28,
+	Text = "0 " .. Config.Spiel.Waehrung,
+}, panel)
+
+local multLabel = UiKit.Text({
+	Name = "Multiplikator",
+	Position = UDim2.new(0, 0, 0, 51),
+	Size = UDim2.new(1, 0, 0, 16),
+	Font = Enum.Font.GothamBold,
+	TextSize = 12,
+	TextColor3 = Farben.Gold,
+	Text = "x1.00 Einkommen",
+}, panel)
+
+local lagerTitel = UiKit.Text({
+	Name = "LagerTitel",
+	Position = UDim2.new(0, 0, 0, 72),
+	Size = UDim2.new(1, 0, 0, 14),
+	TextSize = 11,
+	TextColor3 = Farben.TextGedimmt,
+	Text = "LAGER  0 / 0",
+}, panel)
+
+local balkenHuelle = UiKit.Neu("Frame", {
+	Name = "LagerBalken",
+	Position = UDim2.new(0, 0, 0, 89),
+	Size = UDim2.new(1, 0, 0, 10),
+	BackgroundColor3 = Color3.fromRGB(35, 40, 58),
+	BorderSizePixel = 0,
+}, panel)
+UiKit.Ecken(balkenHuelle, 5)
+
+local balkenFuellung = UiKit.Neu("Frame", {
+	Name = "Fuellung",
+	Size = UDim2.new(0, 0, 1, 0),
+	BackgroundColor3 = Farben.Akzent,
+	BorderSizePixel = 0,
+}, balkenHuelle)
+UiKit.Ecken(balkenFuellung, 5)
+
+local sammelKnopf = UiKit.Knopf({
+	Name = "Sammeln",
+	Position = UDim2.new(0, 0, 0, 106),
+	Size = UDim2.new(1, 0, 0, 38),
+	BackgroundColor3 = Farben.Gut,
+	TextSize = 15,
+	TextColor3 = Color3.fromRGB(8, 20, 14),
+	Text = "SAMMELN",
+}, panel)
+
+-- ================================================================
+-- BENACHRICHTIGUNGEN (Toasts)
+-- ================================================================
+local toastBereich = UiKit.Neu("Frame", {
+	Name = "Toasts",
+	AnchorPoint = Vector2.new(0.5, 1),
+	Position = UDim2.new(0.5, 0, 1, -110),
+	Size = UDim2.new(0, 340, 0, 170),
+	BackgroundTransparency = 1,
+}, hud)
+
+UiKit.Neu("UIListLayout", {
+	FillDirection = Enum.FillDirection.Vertical,
+	VerticalAlignment = Enum.VerticalAlignment.Bottom,
+	HorizontalAlignment = Enum.HorizontalAlignment.Center,
+	Padding = UDim.new(0, 6),
+}, toastBereich)
+
+local function zeigeToast(text: string, farbe: Color3)
+	local karte = UiKit.Text({
+		Size = UDim2.new(1, 0, 0, 32),
+		BackgroundColor3 = Farben.Panel,
+		BackgroundTransparency = 0.1,
+		Font = Enum.Font.GothamBold,
+		TextSize = 14,
+		TextXAlignment = Enum.TextXAlignment.Center,
+		TextColor3 = farbe,
+		Text = text,
+	}, toastBereich)
+	UiKit.Ecken(karte, 8)
+	UiKit.Rand(karte, farbe, 1, 0.5)
+
+	task.delay(2.6, function()
+		local weg = TweenService:Create(karte, TweenInfo.new(0.35), {
+			BackgroundTransparency = 1,
+			TextTransparency = 1,
+		})
+		weg.Completed:Connect(function()
+			karte:Destroy()
+		end)
+		weg:Play()
+	end)
+end
+
+-- ================================================================
+-- DATEN VOM SERVER
+-- ================================================================
+local zustand = {
+	Geld = 0,
+	Lager = 0,
+	LagerKapazitaet = Config.Lager.Startkapazitaet,
+	Multiplikator = 1,
+	Rebirths = 0,
+}
+
+-- Angezeigte Werte laufen weich zum Zielwert hoch (fuehlt sich besser an)
+local angezeigtesGeld = 0
+local angezeigtesLager = 0
+
+Net:Event("DatenUpdate").OnClientEvent:Connect(function(daten)
+	for schluessel, wert in daten do
+		zustand[schluessel] = wert
+	end
+end)
+
+Net:Event("Benachrichtigung").OnClientEvent:Connect(function(info)
+	zeigeToast(info.Text, UiKit.FarbeAusName(info.Farbe))
+end)
+
+Net:Event("KaufBestaetigt").OnClientEvent:Connect(function(info)
+	zeigeToast("Gekauft: " .. info.Name, Farben.Gut)
+
+	-- Kleiner Puls auf dem Panel als Feedback
+	panelRand.Transparency = 0
+	TweenService:Create(panelRand, TweenInfo.new(0.6), { Transparency = 0.55 }):Play()
+end)
+
+sammelKnopf.Activated:Connect(function()
+	-- Der Client bittet nur. Der Server prueft Abstand und Betrag.
+	Net:Event("SammelAnfrage"):FireServer()
+end)
+
+-- ================================================================
+-- ANZEIGE AKTUALISIEREN
+-- ================================================================
+RunService.RenderStepped:Connect(function(deltaZeit)
+	-- Weiches Hochzaehlen: 12 = Geschwindigkeit, hoeher = schneller
+	local faktor = math.min(1, deltaZeit * 12)
+	angezeigtesGeld += (zustand.Geld - angezeigtesGeld) * faktor
+	angezeigtesLager += (zustand.Lager - angezeigtesLager) * faktor
+
+	-- Bei sehr kleinen Restdifferenzen direkt einrasten
+	if math.abs(zustand.Geld - angezeigtesGeld) < 1 then
+		angezeigtesGeld = zustand.Geld
+	end
+	if math.abs(zustand.Lager - angezeigtesLager) < 1 then
+		angezeigtesLager = zustand.Lager
+	end
+
+	geldLabel.Text = Util.FormatGeld(angezeigtesGeld) .. " " .. Config.Spiel.Waehrung
+
+	local multText = string.format("x%.2f Einkommen", zustand.Multiplikator)
+	if zustand.Rebirths > 0 then
+		multText ..= string.format("   •   %d Rebirth(s)", zustand.Rebirths)
+	end
+	multLabel.Text = multText
+
+	local kapazitaet = math.max(1, zustand.LagerKapazitaet)
+	local anteil = math.clamp(angezeigtesLager / kapazitaet, 0, 1)
+
+	lagerTitel.Text = string.format(
+		"LAGER  %s / %s",
+		Util.FormatGeld(angezeigtesLager),
+		Util.FormatGeld(kapazitaet)
+	)
+	balkenFuellung.Size = UDim2.new(anteil, 0, 1, 0)
+	balkenFuellung.BackgroundColor3 = (anteil >= 0.999) and Farben.Warnung or Farben.Akzent
+
+	local etwasDrin = zustand.Lager > 0
+	sammelKnopf.BackgroundColor3 = etwasDrin and Farben.Gut or Farben.Inaktiv
+	sammelKnopf.TextColor3 = etwasDrin and Color3.fromRGB(8, 20, 14) or Farben.TextGedimmt
+	sammelKnopf.Text = etwasDrin
+		and ("SAMMELN  +" .. Util.FormatGeld(zustand.Lager))
+		or "LAGER LEER"
+end)
+
+-- Frische Daten anfordern (falls der Server schon gesendet hat,
+-- bevor dieses Script bereit war).
+task.defer(function()
+	Net:Event("DatenAnfrage"):FireServer()
+end)
+
+print("[HudClient] HUD bereit")
+]]></ProtectedString>
+    </Properties>
+  </Item>
+  <Item class="LocalScript" referent="RBX26">
+    <Properties>
+      <string name="Name">ImperiumGui</string>
+      <ProtectedString name="Source"><![CDATA[--[[
+	ImperiumGui  —  LocalScript
+	================================================================
+	EXPLORER-ORT:  StarterPlayer > StarterPlayerScripts > ImperiumGui
+
+	Ein Fenster mit drei Reitern:
+	  REBIRTH      — Fortschritt zurücksetzen gegen dauerhaften Bonus
+	  TECHNOLOGIE  — der Forschungsbaum
+	  SHOP         — Gamepasses und Credit-Pakete
+
+	WARUM DREI REITER STATT DREI FENSTER?
+	Drei Fenster hiessen drei Knoepfe in der Aktionsleiste, dreimal
+	derselbe Rahmen-Code und dreimal dieselben Server-Daten. Die drei
+	Themen gehoeren inhaltlich zusammen ("mein Imperium") — also ein
+	Fenster.
+
+	EXPLOIT-SCHUTZ:
+	"TechKaufen" schickt nur die Id der Technologie, "RebirthStarten"
+	gar nichts. Preise, Stufen und Voraussetzungen prueft der
+	ImperiumService. Die Robux-Kaeufe laufen ueber MarketplaceService;
+	gutgeschrieben wird erst in ProcessReceipt auf dem Server.
+	================================================================
+]]
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local MarketplaceService = game:GetService("MarketplaceService")
+
+local Config = require(ReplicatedStorage:WaitForChild("GameConfig"))
+local TechConfig = require(ReplicatedStorage:WaitForChild("TechConfig"))
+local Util = require(ReplicatedStorage:WaitForChild("Util"))
+local Net = require(ReplicatedStorage:WaitForChild("Net"))
+local UiKit = require(ReplicatedStorage:WaitForChild("UiKit"))
+
+local spieler = Players.LocalPlayer
+local Farben = UiKit.Farben
+
+-- ================================================================
+-- ZUSTAND
+-- ================================================================
+local stand = {
+	Tech = {},
+	TechPreise = {},
+	Rebirths = 0,
+	RebirthSchwelle = TechConfig.RebirthSchwelle(0),
+	GesamtVerdient = 0,
+	KannRebirth = false,
+	BonusProRebirth = 0.25,
+	Shop = {},
+}
+
+local geld = 0
+local rebirthBestaetigungBis = 0   -- Zwei-Klick-Sicherung
+
+local fenster = UiKit.Fenster({
+	Name = "ImperiumGui",
+	Titel = "IMPERIUM",
+	Untertitel = "Rebirth · Technologie · Shop",
+	MaxGroesse = Vector2.new(660, 580),
+	Ebene = 7,
+})
+
+-- ================================================================
+-- REITER
+-- ================================================================
+local reiterLeiste = UiKit.Neu("Frame", {
+	Name = "Reiter",
+	Size = UDim2.new(1, 0, 0, 34),
+	BackgroundTransparency = 1,
+}, fenster.Inhalt)
+
+UiKit.Neu("UIListLayout", {
+	FillDirection = Enum.FillDirection.Horizontal,
+	SortOrder = Enum.SortOrder.LayoutOrder,
+	Padding = UDim.new(0, 6),
+}, reiterLeiste)
+
+local seitenBereich = UiKit.Neu("Frame", {
+	Name = "Seiten",
+	Position = UDim2.new(0, 0, 0, 42),
+	Size = UDim2.new(1, 0, 1, -42),
+	BackgroundTransparency = 1,
+}, fenster.Inhalt)
+
+local reiter: { any } = {}
+
+local function zeigeSeite(name: string)
+	for _, eintrag in reiter do
+		local aktiv = eintrag.Name == name
+		eintrag.Seite.Visible = aktiv
+		eintrag.Knopf.BackgroundColor3 = aktiv and Farben.Akzent or Farben.PanelHell
+		eintrag.Knopf.TextColor3 = aktiv and Color3.fromRGB(8, 16, 24) or Farben.TextGedimmt
+	end
+end
+
+local function baueReiter(reihenfolge: number, name: string)
+	local knopf = UiKit.Knopf({
+		Name = name,
+		LayoutOrder = reihenfolge,
+		Size = UDim2.new(1 / 3, -4, 1, 0),
+		BackgroundColor3 = Farben.PanelHell,
+		TextColor3 = Farben.TextGedimmt,
+		TextSize = 12,
+		Text = name,
+	}, reiterLeiste)
+
+	local seite = UiKit.Neu("Frame", {
+		Name = name,
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		Visible = false,
+	}, seitenBereich)
+
+	table.insert(reiter, { Name = name, Knopf = knopf, Seite = seite })
+	knopf.Activated:Connect(function()
+		zeigeSeite(name)
+	end)
+
+	return seite
+end
+
+local seiteRebirth = baueReiter(1, "REBIRTH")
+local seiteTech = baueReiter(2, "TECHNOLOGIE")
+local seiteShop = baueReiter(3, "SHOP")
+
+-- ================================================================
+-- SEITE 1: REBIRTH
+-- ================================================================
+local rebirthZahl = UiKit.Text({
+	Size = UDim2.new(1, 0, 0, 40),
+	Font = Enum.Font.GothamBlack,
+	TextSize = 32,
+	TextXAlignment = Enum.TextXAlignment.Center,
+	TextColor3 = Farben.Gold,
+	Text = "REBIRTH 0",
+}, seiteRebirth)
+
+local rebirthBonus = UiKit.Text({
+	Position = UDim2.new(0, 0, 0, 40),
+	Size = UDim2.new(1, 0, 0, 18),
+	Font = Enum.Font.GothamBold,
+	TextSize = 13,
+	TextXAlignment = Enum.TextXAlignment.Center,
+	Text = "Aktuell +0 % Einkommen",
+}, seiteRebirth)
+
+local fortschrittText = UiKit.Text({
+	Position = UDim2.new(0, 0, 0, 68),
+	Size = UDim2.new(1, 0, 0, 14),
+	TextSize = 11,
+	TextXAlignment = Enum.TextXAlignment.Center,
+	TextColor3 = Farben.TextGedimmt,
+	Text = "Gesamtverdienst 0 / 0",
+}, seiteRebirth)
+
+local balkenHuelle = UiKit.Neu("Frame", {
+	Position = UDim2.new(0, 0, 0, 86),
+	Size = UDim2.new(1, 0, 0, 12),
+	BackgroundColor3 = Color3.fromRGB(35, 40, 58),
+	BorderSizePixel = 0,
+}, seiteRebirth)
+UiKit.Ecken(balkenHuelle, 6)
+
+local balkenFuellung = UiKit.Neu("Frame", {
+	Size = UDim2.new(0, 0, 1, 0),
+	BackgroundColor3 = Farben.Gold,
+	BorderSizePixel = 0,
+}, balkenHuelle)
+UiKit.Ecken(balkenFuellung, 6)
+
+-- Zwei Spalten: was weg ist und was bleibt
+local function baueSpalte(x: number, titel: string, farbe: Color3, eintraege: { string })
+	local spalte = UiKit.Neu("Frame", {
+		Position = UDim2.new(x, x == 0 and 0 or 5, 0, 112),
+		Size = UDim2.new(0.5, -5, 0, 132),
+		BackgroundColor3 = Farben.PanelHell,
+		BorderSizePixel = 0,
+	}, seiteRebirth)
+	UiKit.Ecken(spalte, 10)
+	UiKit.Abstand(spalte, 10)
+
+	UiKit.Text({
+		Size = UDim2.new(1, 0, 0, 14),
+		Font = Enum.Font.GothamBold,
+		TextSize = 10,
+		TextColor3 = farbe,
+		Text = titel,
+	}, spalte)
+
+	for index, text in eintraege do
+		UiKit.Text({
+			Position = UDim2.new(0, 0, 0, 20 + index * 18),
+			Size = UDim2.new(1, 0, 0, 16),
+			TextSize = 11,
+			TextColor3 = Farben.Text,
+			TextTruncate = Enum.TextTruncate.AtEnd,
+			Text = "· " .. text,
+		}, spalte)
+	end
+end
+
+baueSpalte(0, "WIRD ZURÜCKGESETZT", Farben.Warnung, TechConfig.Rebirth.WirdZurueckgesetzt)
+baueSpalte(0.5, "BLEIBT ERHALTEN", Farben.Gut, TechConfig.Rebirth.BleibtErhalten)
+
+local rebirthKnopf = UiKit.Knopf({
+	AnchorPoint = Vector2.new(0, 1),
+	Position = UDim2.new(0, 0, 1, 0),
+	Size = UDim2.new(1, 0, 0, 44),
+	BackgroundColor3 = Farben.Inaktiv,
+	TextColor3 = Farben.TextGedimmt,
+	TextSize = 15,
+	Text = "REBIRTH DURCHFÜHREN",
+}, seiteRebirth)
+
+-- ================================================================
+-- SEITE 2: TECHNOLOGIE
+-- ================================================================
+local techListe = UiKit.Neu("ScrollingFrame", {
+	Size = UDim2.fromScale(1, 1),
+	BackgroundTransparency = 1,
+	BorderSizePixel = 0,
+	CanvasSize = UDim2.new(),
+	AutomaticCanvasSize = Enum.AutomaticSize.Y,
+	ScrollBarThickness = 5,
+	ScrollBarImageColor3 = Farben.PanelRand,
+	ScrollingDirection = Enum.ScrollingDirection.Y,
+}, seiteTech)
+
+UiKit.Neu("UIListLayout", {
+	SortOrder = Enum.SortOrder.LayoutOrder,
+	Padding = UDim.new(0, 8),
+}, techListe)
+UiKit.Neu("UIPadding", { PaddingRight = UDim.new(0, 8) }, techListe)
+
+local techZeilen: { [string]: any } = {}
+
+for _, tech in TechConfig.Technologien do
+	local zeile = UiKit.Neu("Frame", {
+		Name = tech.Id,
+		LayoutOrder = tech.Reihenfolge,
+		Size = UDim2.new(1, 0, 0, 84),
+		BackgroundColor3 = Farben.PanelHell,
+		BorderSizePixel = 0,
+	}, techListe)
+	UiKit.Ecken(zeile, 10)
+
+	local streifen = UiKit.Neu("Frame", {
+		Size = UDim2.new(0, 4, 1, -16),
+		Position = UDim2.new(0, 8, 0, 8),
+		BackgroundColor3 = tech.Farbe,
+		BorderSizePixel = 0,
+	}, zeile)
+	UiKit.Ecken(streifen, 2)
+
+	UiKit.Text({
+		Position = UDim2.new(0, 20, 0, 8),
+		Size = UDim2.new(1, -180, 0, 18),
+		Font = Enum.Font.GothamBold,
+		TextSize = 15,
+		Text = tech.Name,
+	}, zeile)
+
+	UiKit.Text({
+		Position = UDim2.new(0, 20, 0, 27),
+		Size = UDim2.new(1, -180, 0, 28),
+		TextSize = 11,
+		TextColor3 = Farben.TextGedimmt,
+		TextWrapped = true,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		Text = tech.Beschreibung,
+	}, zeile)
+
+	local stufenLabel = UiKit.Text({
+		Position = UDim2.new(0, 20, 0, 58),
+		Size = UDim2.new(1, -180, 0, 16),
+		Font = Enum.Font.GothamBold,
+		TextSize = 13,
+		TextColor3 = tech.Farbe,
+		Text = "",
+	}, zeile)
+
+	local preisLabel = UiKit.Text({
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -10, 0, 12),
+		Size = UDim2.new(0, 150, 0, 18),
+		Font = Enum.Font.GothamBold,
+		TextSize = 14,
+		TextXAlignment = Enum.TextXAlignment.Right,
+		Text = "",
+	}, zeile)
+
+	local knopf = UiKit.Knopf({
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -10, 0, 40),
+		Size = UDim2.new(0, 150, 0, 30),
+		TextSize = 13,
+		Text = "ERFORSCHEN",
+	}, zeile)
+
+	knopf.Activated:Connect(function()
+		Net:Event("TechKaufen"):FireServer(tech.Id)
+	end)
+
+	techZeilen[tech.Id] = { Stufen = stufenLabel, Preis = preisLabel, Knopf = knopf }
+end
+
+-- ================================================================
+-- SEITE 3: SHOP
+-- ================================================================
+local shopListe = UiKit.Neu("ScrollingFrame", {
+	Size = UDim2.fromScale(1, 1),
+	BackgroundTransparency = 1,
+	BorderSizePixel = 0,
+	CanvasSize = UDim2.new(),
+	AutomaticCanvasSize = Enum.AutomaticSize.Y,
+	ScrollBarThickness = 5,
+	ScrollBarImageColor3 = Farben.PanelRand,
+	ScrollingDirection = Enum.ScrollingDirection.Y,
+}, seiteShop)
+
+UiKit.Neu("UIListLayout", {
+	SortOrder = Enum.SortOrder.LayoutOrder,
+	Padding = UDim.new(0, 8),
+}, shopListe)
+UiKit.Neu("UIPadding", { PaddingRight = UDim.new(0, 8) }, shopListe)
+
+local function baueShop()
+	for _, kind in shopListe:GetChildren() do
+		if kind:IsA("Frame") then
+			kind:Destroy()
+		end
+	end
+
+	for index, eintrag in stand.Shop do
+		local zeile = UiKit.Neu("Frame", {
+			Name = eintrag.Schluessel,
+			LayoutOrder = index,
+			Size = UDim2.new(1, 0, 0, 76),
+			BackgroundColor3 = Farben.PanelHell,
+			BorderSizePixel = 0,
+		}, shopListe)
+		UiKit.Ecken(zeile, 10)
+
+		local istPass = eintrag.Art == "Gamepass"
+
+		local streifen = UiKit.Neu("Frame", {
+			Size = UDim2.new(0, 4, 1, -16),
+			Position = UDim2.new(0, 8, 0, 8),
+			BackgroundColor3 = istPass and Farben.Gold or Farben.Akzent,
+			BorderSizePixel = 0,
+		}, zeile)
+		UiKit.Ecken(streifen, 2)
+
+		UiKit.Text({
+			Position = UDim2.new(0, 20, 0, 8),
+			Size = UDim2.new(1, -180, 0, 18),
+			Font = Enum.Font.GothamBold,
+			TextSize = 15,
+			Text = eintrag.Name,
+		}, zeile)
+
+		UiKit.Text({
+			Position = UDim2.new(0, 20, 0, 27),
+			Size = UDim2.new(1, -180, 0, 14),
+			TextSize = 10,
+			TextColor3 = istPass and Farben.Gold or Farben.Akzent,
+			Text = istPass and "GAMEPASS · einmalig, für immer" or "PAKET · beliebig oft",
+		}, zeile)
+
+		UiKit.Text({
+			Position = UDim2.new(0, 20, 0, 43),
+			Size = UDim2.new(1, -180, 0, 26),
+			TextSize = 11,
+			TextColor3 = Farben.TextGedimmt,
+			TextWrapped = true,
+			TextYAlignment = Enum.TextYAlignment.Top,
+			Text = eintrag.Beschreibung,
+		}, zeile)
+
+		local knopf = UiKit.Knopf({
+			AnchorPoint = Vector2.new(1, 0.5),
+			Position = UDim2.new(1, -10, 0.5, 0),
+			Size = UDim2.new(0, 150, 0, 34),
+			TextSize = 13,
+			Text = "KAUFEN",
+		}, zeile)
+
+		if eintrag.Besitzt then
+			knopf.Text = "BESITZT DU"
+			knopf.BackgroundColor3 = Farben.Gut
+			knopf.TextColor3 = Color3.fromRGB(8, 20, 14)
+		elseif not eintrag.Verfuegbar then
+			-- Id steht noch auf 0 -> im Creator Dashboard noch nicht angelegt
+			knopf.Text = "BALD VERFÜGBAR"
+			knopf.BackgroundColor3 = Farben.Inaktiv
+			knopf.TextColor3 = Farben.TextGedimmt
+		else
+			knopf.Activated:Connect(function()
+				if istPass then
+					MarketplaceService:PromptGamePassPurchase(spieler, eintrag.Id)
+				else
+					MarketplaceService:PromptProductPurchase(spieler, eintrag.Id)
+				end
+			end)
+		end
+	end
+end
+
+-- ================================================================
+-- ANZEIGE AKTUALISIEREN
+-- ================================================================
+local function aktualisiere()
+	-- --- Rebirth ---
+	rebirthZahl.Text = "REBIRTH " .. stand.Rebirths
+	rebirthBonus.Text = ("Aktuell +%d %% Einkommen  ·  nächster Rebirth +%d %%"):format(
+		math.floor(stand.Rebirths * stand.BonusProRebirth * 100),
+		math.floor(stand.BonusProRebirth * 100)
+	)
+
+	local anteil = math.clamp(stand.GesamtVerdient / math.max(1, stand.RebirthSchwelle), 0, 1)
+	balkenFuellung.Size = UDim2.new(anteil, 0, 1, 0)
+	fortschrittText.Text = ("Gesamtverdienst  %s / %s %s"):format(
+		Util.FormatGeld(stand.GesamtVerdient),
+		Util.FormatGeld(stand.RebirthSchwelle),
+		Config.Spiel.Waehrung
+	)
+
+	if stand.KannRebirth then
+		local wartetAufBestaetigung = os.clock() < rebirthBestaetigungBis
+		rebirthKnopf.BackgroundColor3 = wartetAufBestaetigung and Farben.Warnung or Farben.Gold
+		rebirthKnopf.TextColor3 = Color3.fromRGB(20, 14, 0)
+		rebirthKnopf.Text = wartetAufBestaetigung
+			and "SICHER?  NOCHMAL DRÜCKEN"
+			or "REBIRTH DURCHFÜHREN"
+	else
+		rebirthKnopf.BackgroundColor3 = Farben.Inaktiv
+		rebirthKnopf.TextColor3 = Farben.TextGedimmt
+		rebirthKnopf.Text = "NOCH " .. Util.FormatGeld(
+			math.max(0, stand.RebirthSchwelle - stand.GesamtVerdient)
+		) .. " VERDIENEN"
+	end
+
+	-- --- Technologie ---
+	for _, tech in TechConfig.Technologien do
+		local zeile = techZeilen[tech.Id]
+		if not zeile then
+			continue
+		end
+
+		local stufe = stand.Tech[tech.Id] or 0
+		local preis = stand.TechPreise[tech.Id]
+
+		-- Stufenanzeige als gefuellte/leere Kaestchen
+		local kaestchen = {}
+		for i = 1, tech.MaxStufe do
+			table.insert(kaestchen, i <= stufe and "■" or "□")
+		end
+		zeile.Stufen.Text = table.concat(kaestchen, " ")
+			.. ("   Stufe %d/%d"):format(stufe, tech.MaxStufe)
+
+		if not preis then
+			zeile.Preis.Text = "MAXIMUM"
+			zeile.Preis.TextColor3 = Farben.Gut
+			zeile.Knopf.Text = "VOLL ERFORSCHT"
+			zeile.Knopf.BackgroundColor3 = Farben.Inaktiv
+			zeile.Knopf.TextColor3 = Farben.TextGedimmt
+		else
+			local bezahlbar = geld >= preis
+			zeile.Preis.Text = Util.FormatGeld(preis) .. " " .. Config.Spiel.Waehrung
+			zeile.Preis.TextColor3 = bezahlbar and Farben.Gut or Farben.Warnung
+			zeile.Knopf.Text = "ERFORSCHEN"
+			zeile.Knopf.BackgroundColor3 = bezahlbar and Farben.Akzent or Farben.Inaktiv
+			zeile.Knopf.TextColor3 = bezahlbar and Color3.fromRGB(8, 16, 24) or Farben.TextGedimmt
+		end
+	end
+end
+
+-- ================================================================
+-- SERVER-EREIGNISSE
+-- ================================================================
+Net:Event("ImperiumUpdate").OnClientEvent:Connect(function(daten)
+	local shopGeaendert = daten.Shop ~= nil
+
+	for schluessel, wert in daten do
+		stand[schluessel] = wert
+	end
+
+	if shopGeaendert then
+		baueShop()
+	end
+	aktualisiere()
+end)
+
+Net:Event("DatenUpdate").OnClientEvent:Connect(function(daten)
+	if daten.Geld then
+		geld = daten.Geld
+	end
+	if daten.GesamtVerdient then
+		stand.GesamtVerdient = daten.GesamtVerdient
+	end
+	if fenster.Offen then
+		aktualisiere()
+	end
+end)
+
+rebirthKnopf.Activated:Connect(function()
+	if not stand.KannRebirth then
+		return
+	end
+
+	-- Zwei-Klick-Sicherung: Ein Rebirth loescht die ganze Station.
+	-- Der erste Klick fragt nach, der zweite fuehrt ihn aus.
+	if os.clock() >= rebirthBestaetigungBis then
+		rebirthBestaetigungBis = os.clock() + 5
+		aktualisiere()
+		return
+	end
+
+	rebirthBestaetigungBis = 0
+	Net:Event("RebirthStarten"):FireServer()
+end)
+
+-- ================================================================
+-- OEFFNEN
+-- ================================================================
+fenster.BeimOeffnen = function()
+	rebirthBestaetigungBis = 0
+	Net:Event("ImperiumAnfrage"):FireServer()
+	Net:Event("DatenAnfrage"):FireServer()
+	aktualisiere()
+end
+
+local knopf = UiKit.LeistenKnopf("IMPERIUM", 30)
+knopf.Activated:Connect(function()
+	fenster:Umschalten()
+end)
+
+zeigeSeite("REBIRTH")
+baueShop()
+aktualisiere()
+
+task.defer(function()
+	Net:Event("ImperiumAnfrage"):FireServer()
+end)
+
+print("[ImperiumGui] Imperium bereit")
+]]></ProtectedString>
+    </Properties>
+  </Item>
+  <Item class="LocalScript" referent="RBX27">
+    <Properties>
+      <string name="Name">PlanetGui</string>
+      <ProtectedString name="Source"><![CDATA[--[[
+	PlanetGui  —  LocalScript
+	================================================================
+	EXPLORER-ORT:  StarterPlayer > StarterPlayerScripts > PlanetGui
+
+	Die Sternenkarte: alle Planeten, ihre Verteidigung, wem sie
+	gehoeren und wie hoch deine Siegchance ist.
+
+	WARUM DIE SIEGCHANCE HIER BERECHNET WIRD:
+	Die Formel steht in PlanetConfig — also in ReplicatedStorage, wo
+	Server UND Client sie lesen. Beide rechnen darum garantiert
+	dasselbe aus. Der Client zeigt die Zahl nur an; gewuerfelt und
+	entschieden wird ausschliesslich auf dem Server.
+
+	EXPLOIT-SCHUTZ:
+	Beim Klick auf ANGREIFEN geht nur die Planeten-Id zum Server.
+	Cooldown, Schutzschild, Flottenstaerke und Wuerfelwurf prueft
+	der CombatService.
+	================================================================
+]]
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+
+local PlanetConfig = require(ReplicatedStorage:WaitForChild("PlanetConfig"))
+local Util = require(ReplicatedStorage:WaitForChild("Util"))
+local Net = require(ReplicatedStorage:WaitForChild("Net"))
+local UiKit = require(ReplicatedStorage:WaitForChild("UiKit"))
+
+local spieler = Players.LocalPlayer
+local Farben = UiKit.Farben
+
+-- ================================================================
+-- ZUSTAND
+-- ================================================================
+local planetenStand: { [string]: any } = {}   -- [PlanetId] = Serverdaten
+local meineStaerke = 0
+local cooldownBis = 0                          -- os.clock()-Zeitpunkt
+local imFlugBis = 0
+
+local fenster = UiKit.Fenster({
+	Name = "SternenkarteGui",
+	Titel = "STERNENKARTE",
+	Untertitel = "Planeten erobern · +50 % Einkommen pro Planet",
+	MaxGroesse = Vector2.new(680, 580),
+	Ebene = 6,
+})
+
+-- ================================================================
+-- STATUSLEISTE
+-- ================================================================
+local statusLeiste = UiKit.Neu("Frame", {
+	Name = "Status",
+	Size = UDim2.new(1, 0, 0, 62),
+	BackgroundTransparency = 1,
+}, fenster.Inhalt)
+
+UiKit.Neu("UIListLayout", {
+	FillDirection = Enum.FillDirection.Horizontal,
+	SortOrder = Enum.SortOrder.LayoutOrder,
+	Padding = UDim.new(0, 8),
+}, statusLeiste)
+
+local function baueKachel(reihenfolge: number, titel: string)
+	local kachel = UiKit.Neu("Frame", {
+		Name = titel,
+		LayoutOrder = reihenfolge,
+		Size = UDim2.new(1 / 3, -6, 1, 0),
+		BackgroundColor3 = Farben.PanelHell,
+		BorderSizePixel = 0,
+	}, statusLeiste)
+	UiKit.Ecken(kachel, 10)
+
+	UiKit.Text({
+		Position = UDim2.new(0, 10, 0, 9),
+		Size = UDim2.new(1, -20, 0, 12),
+		TextSize = 10,
+		TextColor3 = Farben.TextGedimmt,
+		Text = titel,
+	}, kachel)
+
+	return UiKit.Text({
+		Name = "Wert",
+		Position = UDim2.new(0, 10, 0, 24),
+		Size = UDim2.new(1, -20, 0, 26),
+		Font = Enum.Font.GothamBlack,
+		TextSize = 18,
+		Text = "0",
+	}, kachel)
+end
+
+local staerkeWert = baueKachel(1, "FLOTTENSTÄRKE")
+local besitzWert = baueKachel(2, "DEINE PLANETEN")
+local bereitWert = baueKachel(3, "FLOTTE BEREIT")
+
+-- ================================================================
+-- PLANETENLISTE
+-- ================================================================
+local liste = UiKit.Neu("ScrollingFrame", {
+	Name = "Planeten",
+	Position = UDim2.new(0, 0, 0, 70),
+	Size = UDim2.new(1, 0, 1, -70),
+	BackgroundTransparency = 1,
+	BorderSizePixel = 0,
+	CanvasSize = UDim2.new(),
+	AutomaticCanvasSize = Enum.AutomaticSize.Y,
+	ScrollBarThickness = 5,
+	ScrollBarImageColor3 = Farben.PanelRand,
+	ScrollingDirection = Enum.ScrollingDirection.Y,
+}, fenster.Inhalt)
+
+UiKit.Neu("UIListLayout", {
+	FillDirection = Enum.FillDirection.Vertical,
+	SortOrder = Enum.SortOrder.LayoutOrder,
+	Padding = UDim.new(0, 8),
+}, liste)
+
+UiKit.Neu("UIPadding", { PaddingRight = UDim.new(0, 8) }, liste)
+
+local zeilen: { [string]: any } = {}
+
+local function baueZeile(eintrag: any)
+	local typ = PlanetConfig.Typen[eintrag.Typ]
+
+	local zeile = UiKit.Neu("Frame", {
+		Name = eintrag.Id,
+		LayoutOrder = eintrag.Reihenfolge,
+		Size = UDim2.new(1, 0, 0, 92),
+		BackgroundColor3 = Farben.PanelHell,
+		BorderSizePixel = 0,
+	}, liste)
+	UiKit.Ecken(zeile, 10)
+	local rand = UiKit.Rand(zeile, Farben.PanelHell, 1.5, 1)
+
+	local streifen = UiKit.Neu("Frame", {
+		Size = UDim2.new(0, 4, 1, -16),
+		Position = UDim2.new(0, 8, 0, 8),
+		BackgroundColor3 = typ.Atmosphaere,
+		BorderSizePixel = 0,
+	}, zeile)
+	UiKit.Ecken(streifen, 2)
+
+	UiKit.Text({
+		Position = UDim2.new(0, 20, 0, 8),
+		Size = UDim2.new(1, -180, 0, 18),
+		Font = Enum.Font.GothamBold,
+		TextSize = 15,
+		Text = eintrag.Name,
+	}, zeile)
+
+	UiKit.Text({
+		Position = UDim2.new(0, 20, 0, 27),
+		Size = UDim2.new(1, -180, 0, 14),
+		TextSize = 11,
+		TextColor3 = typ.Atmosphaere,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		Text = typ.Name .. "  ·  " .. typ.BonusText,
+	}, zeile)
+
+	local vertLabel = UiKit.Text({
+		Position = UDim2.new(0, 20, 0, 46),
+		Size = UDim2.new(1, -180, 0, 14),
+		TextSize = 11,
+		TextColor3 = Farben.TextGedimmt,
+		Text = "Verteidigung …",
+	}, zeile)
+
+	local statusLabel = UiKit.Text({
+		Position = UDim2.new(0, 20, 0, 64),
+		Size = UDim2.new(1, -180, 0, 14),
+		Font = Enum.Font.GothamBold,
+		TextSize = 11,
+		TextColor3 = Farben.TextGedimmt,
+		Text = "unbesetzt",
+	}, zeile)
+
+	local chanceLabel = UiKit.Text({
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -10, 0, 12),
+		Size = UDim2.new(0, 150, 0, 24),
+		Font = Enum.Font.GothamBlack,
+		TextSize = 19,
+		TextXAlignment = Enum.TextXAlignment.Right,
+		Text = "—",
+	}, zeile)
+
+	local chanceText = UiKit.Text({
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -10, 0, 34),
+		Size = UDim2.new(0, 150, 0, 12),
+		TextSize = 10,
+		TextXAlignment = Enum.TextXAlignment.Right,
+		TextColor3 = Farben.TextGedimmt,
+		Text = "SIEGCHANCE",
+	}, zeile)
+
+	local knopf = UiKit.Knopf({
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -10, 0, 52),
+		Size = UDim2.new(0, 150, 0, 30),
+		TextSize = 13,
+		Text = "ANGREIFEN",
+	}, zeile)
+
+	knopf.Activated:Connect(function()
+		Net:Event("AngriffStarten"):FireServer(eintrag.Id)
+	end)
+
+	zeilen[eintrag.Id] = {
+		Rahmen = zeile,
+		Rand = rand,
+		Verteidigung = vertLabel,
+		Status = statusLabel,
+		Chance = chanceLabel,
+		ChanceText = chanceText,
+		Knopf = knopf,
+	}
+end
+
+for _, eintrag in PlanetConfig.Planeten do
+	baueZeile(eintrag)
+end
+
+-- ================================================================
+-- ANZEIGE
+-- ================================================================
+local function aktualisiere()
+	local jetzt = os.clock()
+	local cooldownRest = math.max(0, cooldownBis - jetzt)
+	local unterwegs = jetzt < imFlugBis
+	local eigene = 0
+
+	for _, eintrag in PlanetConfig.Planeten do
+		local zeile = zeilen[eintrag.Id]
+		local daten = planetenStand[eintrag.Id]
+		if not zeile or not daten then
+			continue
+		end
+
+		local gehoertMir = daten.BesitzerId == spieler.UserId
+		if gehoertMir then
+			eigene += 1
+		end
+
+		zeile.Verteidigung.Text = "Verteidigung  " .. Util.FormatGeld(daten.Verteidigung)
+
+		-- Zeile 4: wem gehoert er / laeuft ein Schild?
+		local schildRest = daten.SchildRest or 0
+		if gehoertMir then
+			zeile.Status.Text = "UNTER DEINER KONTROLLE"
+			zeile.Status.TextColor3 = Farben.Gut
+			zeile.Rand.Color = Farben.Gut
+			zeile.Rand.Transparency = 0.5
+		elseif daten.BesitzerName then
+			zeile.Status.Text = "gehört " .. daten.BesitzerName
+			zeile.Status.TextColor3 = Farben.Warnung
+			zeile.Rand.Color = Farben.Warnung
+			zeile.Rand.Transparency = 0.6
+		else
+			zeile.Status.Text = "unbesetzt"
+			zeile.Status.TextColor3 = Farben.TextGedimmt
+			zeile.Rand.Transparency = 1
+		end
+
+		if schildRest > 0 and not gehoertMir then
+			zeile.Status.Text ..= ("  ·  Schild %s"):format(Util.FormatZeit(schildRest))
+		end
+
+		-- Siegchance — dieselbe Formel wie auf dem Server
+		local chance = PlanetConfig.Siegchance(meineStaerke, daten.Verteidigung)
+
+		if gehoertMir then
+			zeile.Chance.Text = "DEINS"
+			zeile.Chance.TextColor3 = Farben.Gut
+			zeile.ChanceText.Text = "EROBERT"
+		else
+			zeile.Chance.Text = ("%d %%"):format(math.floor(chance * 100))
+			zeile.Chance.TextColor3 = (chance >= 0.6) and Farben.Gut
+				or (chance >= 0.3) and Farben.Gold
+				or Farben.Warnung
+			zeile.ChanceText.Text = "SIEGCHANCE"
+		end
+
+		-- Knopf
+		local blockiert = gehoertMir or unterwegs or cooldownRest > 0 or (schildRest > 0)
+		zeile.Knopf.BackgroundColor3 = blockiert and Farben.Inaktiv or Farben.Akzent
+		zeile.Knopf.TextColor3 = blockiert and Farben.TextGedimmt or Color3.fromRGB(8, 16, 24)
+
+		if gehoertMir then
+			zeile.Knopf.Text = "IN DEINEM BESITZ"
+		elseif unterwegs then
+			zeile.Knopf.Text = "FLOTTE UNTERWEGS"
+		elseif cooldownRest > 0 then
+			zeile.Knopf.Text = "BEREIT IN " .. Util.FormatZeit(cooldownRest)
+		elseif schildRest > 0 then
+			zeile.Knopf.Text = "GESCHÜTZT"
+		else
+			zeile.Knopf.Text = "ANGREIFEN"
+		end
+	end
+
+	staerkeWert.Text = Util.FormatGeld(meineStaerke)
+	besitzWert.Text = eigene .. " / " .. #PlanetConfig.Planeten
+
+	if unterwegs then
+		bereitWert.Text = "UNTERWEGS"
+		bereitWert.TextColor3 = Farben.Gold
+	elseif cooldownRest > 0 then
+		bereitWert.Text = Util.FormatZeit(cooldownRest)
+		bereitWert.TextColor3 = Farben.Warnung
+	else
+		bereitWert.Text = "JA"
+		bereitWert.TextColor3 = Farben.Gut
+	end
+end
+
+-- ================================================================
+-- SERVER-EREIGNISSE
+-- ================================================================
+Net:Event("PlanetUpdate").OnClientEvent:Connect(function(uebersicht)
+	for _, eintrag in uebersicht do
+		planetenStand[eintrag.Id] = eintrag
+		-- SchildRest kommt als Restzeit an. Wir merken uns den
+		-- Ablaufzeitpunkt, damit der Countdown fluessig weiterlaeuft.
+		eintrag._SchildEndeUm = os.clock() + (eintrag.SchildRest or 0)
+	end
+	aktualisiere()
+end)
+
+Net:Event("FlotteUpdate").OnClientEvent:Connect(function(daten)
+	if daten.Staerke then
+		meineStaerke = daten.Staerke
+	end
+end)
+
+Net:Event("KampfErgebnis").OnClientEvent:Connect(function(ergebnis)
+	if ergebnis.Phase == "Start" then
+		imFlugBis = os.clock() + (ergebnis.Reisezeit or 0)
+		cooldownBis = os.clock() + (ergebnis.Cooldown or 0)
+		return
+	end
+
+	imFlugBis = 0
+
+	local text = ergebnis.Gewonnen
+		and ("%s erobert!  (-%d Schiffe)"):format(ergebnis.PlanetName, ergebnis.VerloreneSchiffe)
+		or ("%s gehalten — Angriff gescheitert. (-%d Schiffe)")
+			:format(ergebnis.PlanetName, ergebnis.VerloreneSchiffe)
+
+	-- Die Toast-Meldung selbst kommt vom Server ueber "Benachrichtigung".
+	-- Hier loggen wir nur fuer die Entwickler-Konsole.
+	print("[PlanetGui] " .. text)
+end)
+
+-- Schildzeiten laufen weiter, ohne dass der Server staendig sendet
+RunService.RenderStepped:Connect(function()
+	if not fenster.Offen then
+		return
+	end
+
+	local jetzt = os.clock()
+	for _, eintrag in planetenStand do
+		if eintrag._SchildEndeUm then
+			eintrag.SchildRest = math.max(0, eintrag._SchildEndeUm - jetzt)
+		end
+	end
+
+	aktualisiere()
+end)
+
+-- ================================================================
+-- OEFFNEN
+-- ================================================================
+fenster.BeimOeffnen = function()
+	Net:Event("PlanetAnfrage"):FireServer()
+	Net:Event("FlotteAnfrage"):FireServer()
+	aktualisiere()
+end
+
+local knopf = UiKit.LeistenKnopf("PLANETEN", 20)
+knopf.Activated:Connect(function()
+	fenster:Umschalten()
+end)
+
+task.defer(function()
+	Net:Event("PlanetAnfrage"):FireServer()
+end)
+
+print("[PlanetGui] Sternenkarte bereit")
+]]></ProtectedString>
+    </Properties>
+  </Item>
+</roblox>

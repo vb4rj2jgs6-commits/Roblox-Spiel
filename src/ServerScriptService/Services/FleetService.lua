@@ -138,8 +138,8 @@ function FleetService:GetVerteidigung(spieler: Player): number
 	return math.floor(wert * self:GetAngriffsMultiplikator(spieler))
 end
 
--- Platzhalter fuer den Technologie-Baum (Schritt 5).
--- Sobald daten.Tech Eintraege hat, wird hier multipliziert.
+-- Angriffs-Multiplikator aus der Technologie "Waffensysteme":
+-- +15 % pro Stufe (der Wert steht in TechConfig).
 function FleetService:GetAngriffsMultiplikator(spieler: Player): number
 	local daten = DataService:Get(spieler)
 	if not daten or not daten.Tech then
@@ -148,22 +148,29 @@ function FleetService:GetAngriffsMultiplikator(spieler: Player): number
 
 	local multiplikator = 1
 	if daten.Tech.Waffensysteme then
-		multiplikator += 0.1 * daten.Tech.Waffensysteme
+		multiplikator += 0.15 * daten.Tech.Waffensysteme
 	end
 	return multiplikator
 end
 
--- Bauzeit-Multiplikator. Ebenfalls ein Haken fuer den Tech-Baum.
+-- Bauzeit-Multiplikator (kleiner = schneller). Zwei Quellen:
+--   - Technologie "Werftautomatik": -10 % pro Stufe
+--   - Energiewelten: -8 % pro eroberten Planeten dieses Typs
 function FleetService:GetBauzeitMultiplikator(spieler: Player): number
 	local daten = DataService:Get(spieler)
-	if not daten or not daten.Tech then
+	if not daten then
 		return 1
 	end
 
 	local multiplikator = 1
-	if daten.Tech.Werftautomatik then
+
+	if daten.Tech and daten.Tech.Werftautomatik then
 		multiplikator *= 0.9 ^ daten.Tech.Werftautomatik
 	end
+
+	multiplikator *= math.max(0.1, 1 - CurrencyService:GetPlanetenTypBonus(spieler, "Bauzeit"))
+
+	-- Untergrenze, damit Bauzeiten nie auf praktisch null fallen
 	return math.max(0.2, multiplikator)
 end
 

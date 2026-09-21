@@ -41,13 +41,553 @@ UiKit.Farben = {
 -- Uebersetzt den Farbnamen aus einer Server-Benachrichtigung in eine Farbe.
 function UiKit.FarbeAusName(name: string?): Color3
 	if name == "Warnung" then
-		return UiKit.Farben.Warnung
-	elseif name == "Gut" then
-		return UiKit.Farben.Gut
-	elseif name == "Gold" then
-		return UiKit.Farben.Gold
+		-- ================================================================
+-- FENSTER
+--
+-- Alle Menue-Fenster (Werft, Sternenkarte, Imperium) sehen gleich aus:
+-- abgedunkelter Hintergrund, Panel in der Mitte, Kopfzeile mit Titel
+-- und Schliessen-Kreuz. Diese Funktion baut genau das und gibt dir den
+-- leeren Inhaltsbereich zurueck.
+--
+-- Benutzung:
+--     local fenster = UiKit.Fenster({ Name = "MeinGui", Titel = "WERFT" })
+--     -- ... etwas in fenster.Inhalt bauen ...
+--     fenster:SetzeOffen(true)
+-- ================================================================
+function UiKit.Fenster(konfiguration: { [string]: any })
+	local spielerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+
+	local gui = UiKit.Neu("ScreenGui", {
+		Name = konfiguration.Name or "Fenster",
+		ResetOnSpawn = false,
+		DisplayOrder = konfiguration.Ebene or 5,
+		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+	}, spielerGui)
+
+	-- Bewusst ein TextButton und kein Frame: nur Knoepfe melden Klicks.
+	local hintergrund = UiKit.Neu("TextButton", {
+		Name = "Hintergrund",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+		BackgroundTransparency = 0.45,
+		BorderSizePixel = 0,
+		AutoButtonColor = false,
+		Text = "",
+		Visible = false,
+	}, gui)
+
+	local panel = UiKit.Neu("Frame", {
+		Name = "Panel",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.new(0.92, 0, 0.88, 0),
+		BackgroundColor3 = UiKit.Farben.Panel,
+		BorderSizePixel = 0,
+		-- Active = true laesst das Panel Klicks schlucken. Ohne das wuerde
+		-- ein Klick mitten ins Fenster den Hintergrund-Knopf darunter
+		-- ausloesen und das Fenster sofort wieder schliessen.
+		Active = true,
+	}, hintergrund)
+	UiKit.Ecken(panel, 14)
+	UiKit.Rand(panel, UiKit.Farben.PanelRand, 1.5, 0.45)
+	UiKit.Abstand(panel, 12)
+
+	UiKit.Neu("UISizeConstraint", {
+		MaxSize = konfiguration.MaxGroesse or Vector2.new(640, 560),
+		MinSize = Vector2.new(280, 320),
+	}, panel)
+
+	UiKit.Text({
+		Name = "Titel",
+		Size = UDim2.new(1, -44, 0, 26),
+		Font = Enum.Font.GothamBlack,
+		TextSize = 20,
+		Text = konfiguration.Titel or "",
+	}, panel)
+
+	UiKit.Text({
+		Name = "Untertitel",
+		Position = UDim2.new(0, 0, 0, 24),
+		Size = UDim2.new(1, -44, 0, 14),
+		TextSize = 11,
+		TextColor3 = UiKit.Farben.TextGedimmt,
+		Text = konfiguration.Untertitel or "",
+	}, panel)
+
+	local schliessen = UiKit.Knopf({
+		Name = "Schliessen",
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, 0, 0, 0),
+		Size = UDim2.new(0, 34, 0, 34),
+		BackgroundColor3 = UiKit.Farben.PanelHell,
+		TextColor3 = UiKit.Farben.Text,
+		TextSize = 16,
+		Text = "X",
+	}, panel)
+
+	local inhalt = UiKit.Neu("Frame", {
+		Name = "Inhalt",
+		Position = UDim2.new(0, 0, 0, 48),
+		Size = UDim2.new(1, 0, 1, -48),
+		BackgroundTransparency = 1,
+	}, panel)
+
+	local fenster = {
+		Gui = gui,
+		Hintergrund = hintergrund,
+		Panel = panel,
+		Inhalt = inhalt,
+		Offen = false,
+		BeimOeffnen = nil :: (() -> ())?,
+	}
+
+	function fenster:SetzeOffen(neuerZustand: boolean)
+		self.Offen = neuerZustand
+		hintergrund.Visible = neuerZustand
+
+		if neuerZustand then
+			if self.BeimOeffnen then
+				self.BeimOeffnen()
+			end
+
+			-- Kleine Aufzieh-Animation
+			panel.Size = UDim2.new(0.92, 0, 0.8, 0)
+			game:GetService("TweenService"):Create(
+				panel,
+				TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+				{ Size = UDim2.new(0.92, 0, 0.88, 0) }
+			):Play()
+		end
 	end
-	return UiKit.Farben.Text
+
+	function fenster:Umschalten()
+		self:SetzeOffen(not self.Offen)
+	end
+
+	schliessen.Activated:Connect(function()
+		fenster:SetzeOffen(false)
+	end)
+
+	-- Klick neben das Panel schliesst das Fenster
+	hintergrund.Activated:Connect(function()
+		fenster:SetzeOffen(false)
+	end)
+
+	return fenster
+end
+
+return UiKit.Farben.Warnung
+	elseif name == "Gut" then
+		-- ================================================================
+-- FENSTER
+--
+-- Alle Menue-Fenster (Werft, Sternenkarte, Imperium) sehen gleich aus:
+-- abgedunkelter Hintergrund, Panel in der Mitte, Kopfzeile mit Titel
+-- und Schliessen-Kreuz. Diese Funktion baut genau das und gibt dir den
+-- leeren Inhaltsbereich zurueck.
+--
+-- Benutzung:
+--     local fenster = UiKit.Fenster({ Name = "MeinGui", Titel = "WERFT" })
+--     -- ... etwas in fenster.Inhalt bauen ...
+--     fenster:SetzeOffen(true)
+-- ================================================================
+function UiKit.Fenster(konfiguration: { [string]: any })
+	local spielerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+
+	local gui = UiKit.Neu("ScreenGui", {
+		Name = konfiguration.Name or "Fenster",
+		ResetOnSpawn = false,
+		DisplayOrder = konfiguration.Ebene or 5,
+		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+	}, spielerGui)
+
+	-- Bewusst ein TextButton und kein Frame: nur Knoepfe melden Klicks.
+	local hintergrund = UiKit.Neu("TextButton", {
+		Name = "Hintergrund",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+		BackgroundTransparency = 0.45,
+		BorderSizePixel = 0,
+		AutoButtonColor = false,
+		Text = "",
+		Visible = false,
+	}, gui)
+
+	local panel = UiKit.Neu("Frame", {
+		Name = "Panel",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.new(0.92, 0, 0.88, 0),
+		BackgroundColor3 = UiKit.Farben.Panel,
+		BorderSizePixel = 0,
+		-- Active = true laesst das Panel Klicks schlucken. Ohne das wuerde
+		-- ein Klick mitten ins Fenster den Hintergrund-Knopf darunter
+		-- ausloesen und das Fenster sofort wieder schliessen.
+		Active = true,
+	}, hintergrund)
+	UiKit.Ecken(panel, 14)
+	UiKit.Rand(panel, UiKit.Farben.PanelRand, 1.5, 0.45)
+	UiKit.Abstand(panel, 12)
+
+	UiKit.Neu("UISizeConstraint", {
+		MaxSize = konfiguration.MaxGroesse or Vector2.new(640, 560),
+		MinSize = Vector2.new(280, 320),
+	}, panel)
+
+	UiKit.Text({
+		Name = "Titel",
+		Size = UDim2.new(1, -44, 0, 26),
+		Font = Enum.Font.GothamBlack,
+		TextSize = 20,
+		Text = konfiguration.Titel or "",
+	}, panel)
+
+	UiKit.Text({
+		Name = "Untertitel",
+		Position = UDim2.new(0, 0, 0, 24),
+		Size = UDim2.new(1, -44, 0, 14),
+		TextSize = 11,
+		TextColor3 = UiKit.Farben.TextGedimmt,
+		Text = konfiguration.Untertitel or "",
+	}, panel)
+
+	local schliessen = UiKit.Knopf({
+		Name = "Schliessen",
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, 0, 0, 0),
+		Size = UDim2.new(0, 34, 0, 34),
+		BackgroundColor3 = UiKit.Farben.PanelHell,
+		TextColor3 = UiKit.Farben.Text,
+		TextSize = 16,
+		Text = "X",
+	}, panel)
+
+	local inhalt = UiKit.Neu("Frame", {
+		Name = "Inhalt",
+		Position = UDim2.new(0, 0, 0, 48),
+		Size = UDim2.new(1, 0, 1, -48),
+		BackgroundTransparency = 1,
+	}, panel)
+
+	local fenster = {
+		Gui = gui,
+		Hintergrund = hintergrund,
+		Panel = panel,
+		Inhalt = inhalt,
+		Offen = false,
+		BeimOeffnen = nil :: (() -> ())?,
+	}
+
+	function fenster:SetzeOffen(neuerZustand: boolean)
+		self.Offen = neuerZustand
+		hintergrund.Visible = neuerZustand
+
+		if neuerZustand then
+			if self.BeimOeffnen then
+				self.BeimOeffnen()
+			end
+
+			-- Kleine Aufzieh-Animation
+			panel.Size = UDim2.new(0.92, 0, 0.8, 0)
+			game:GetService("TweenService"):Create(
+				panel,
+				TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+				{ Size = UDim2.new(0.92, 0, 0.88, 0) }
+			):Play()
+		end
+	end
+
+	function fenster:Umschalten()
+		self:SetzeOffen(not self.Offen)
+	end
+
+	schliessen.Activated:Connect(function()
+		fenster:SetzeOffen(false)
+	end)
+
+	-- Klick neben das Panel schliesst das Fenster
+	hintergrund.Activated:Connect(function()
+		fenster:SetzeOffen(false)
+	end)
+
+	return fenster
+end
+
+return UiKit.Farben.Gut
+	elseif name == "Gold" then
+		-- ================================================================
+-- FENSTER
+--
+-- Alle Menue-Fenster (Werft, Sternenkarte, Imperium) sehen gleich aus:
+-- abgedunkelter Hintergrund, Panel in der Mitte, Kopfzeile mit Titel
+-- und Schliessen-Kreuz. Diese Funktion baut genau das und gibt dir den
+-- leeren Inhaltsbereich zurueck.
+--
+-- Benutzung:
+--     local fenster = UiKit.Fenster({ Name = "MeinGui", Titel = "WERFT" })
+--     -- ... etwas in fenster.Inhalt bauen ...
+--     fenster:SetzeOffen(true)
+-- ================================================================
+function UiKit.Fenster(konfiguration: { [string]: any })
+	local spielerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+
+	local gui = UiKit.Neu("ScreenGui", {
+		Name = konfiguration.Name or "Fenster",
+		ResetOnSpawn = false,
+		DisplayOrder = konfiguration.Ebene or 5,
+		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+	}, spielerGui)
+
+	-- Bewusst ein TextButton und kein Frame: nur Knoepfe melden Klicks.
+	local hintergrund = UiKit.Neu("TextButton", {
+		Name = "Hintergrund",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+		BackgroundTransparency = 0.45,
+		BorderSizePixel = 0,
+		AutoButtonColor = false,
+		Text = "",
+		Visible = false,
+	}, gui)
+
+	local panel = UiKit.Neu("Frame", {
+		Name = "Panel",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.new(0.92, 0, 0.88, 0),
+		BackgroundColor3 = UiKit.Farben.Panel,
+		BorderSizePixel = 0,
+		-- Active = true laesst das Panel Klicks schlucken. Ohne das wuerde
+		-- ein Klick mitten ins Fenster den Hintergrund-Knopf darunter
+		-- ausloesen und das Fenster sofort wieder schliessen.
+		Active = true,
+	}, hintergrund)
+	UiKit.Ecken(panel, 14)
+	UiKit.Rand(panel, UiKit.Farben.PanelRand, 1.5, 0.45)
+	UiKit.Abstand(panel, 12)
+
+	UiKit.Neu("UISizeConstraint", {
+		MaxSize = konfiguration.MaxGroesse or Vector2.new(640, 560),
+		MinSize = Vector2.new(280, 320),
+	}, panel)
+
+	UiKit.Text({
+		Name = "Titel",
+		Size = UDim2.new(1, -44, 0, 26),
+		Font = Enum.Font.GothamBlack,
+		TextSize = 20,
+		Text = konfiguration.Titel or "",
+	}, panel)
+
+	UiKit.Text({
+		Name = "Untertitel",
+		Position = UDim2.new(0, 0, 0, 24),
+		Size = UDim2.new(1, -44, 0, 14),
+		TextSize = 11,
+		TextColor3 = UiKit.Farben.TextGedimmt,
+		Text = konfiguration.Untertitel or "",
+	}, panel)
+
+	local schliessen = UiKit.Knopf({
+		Name = "Schliessen",
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, 0, 0, 0),
+		Size = UDim2.new(0, 34, 0, 34),
+		BackgroundColor3 = UiKit.Farben.PanelHell,
+		TextColor3 = UiKit.Farben.Text,
+		TextSize = 16,
+		Text = "X",
+	}, panel)
+
+	local inhalt = UiKit.Neu("Frame", {
+		Name = "Inhalt",
+		Position = UDim2.new(0, 0, 0, 48),
+		Size = UDim2.new(1, 0, 1, -48),
+		BackgroundTransparency = 1,
+	}, panel)
+
+	local fenster = {
+		Gui = gui,
+		Hintergrund = hintergrund,
+		Panel = panel,
+		Inhalt = inhalt,
+		Offen = false,
+		BeimOeffnen = nil :: (() -> ())?,
+	}
+
+	function fenster:SetzeOffen(neuerZustand: boolean)
+		self.Offen = neuerZustand
+		hintergrund.Visible = neuerZustand
+
+		if neuerZustand then
+			if self.BeimOeffnen then
+				self.BeimOeffnen()
+			end
+
+			-- Kleine Aufzieh-Animation
+			panel.Size = UDim2.new(0.92, 0, 0.8, 0)
+			game:GetService("TweenService"):Create(
+				panel,
+				TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+				{ Size = UDim2.new(0.92, 0, 0.88, 0) }
+			):Play()
+		end
+	end
+
+	function fenster:Umschalten()
+		self:SetzeOffen(not self.Offen)
+	end
+
+	schliessen.Activated:Connect(function()
+		fenster:SetzeOffen(false)
+	end)
+
+	-- Klick neben das Panel schliesst das Fenster
+	hintergrund.Activated:Connect(function()
+		fenster:SetzeOffen(false)
+	end)
+
+	return fenster
+end
+
+return UiKit.Farben.Gold
+	end
+	-- ================================================================
+-- FENSTER
+--
+-- Alle Menue-Fenster (Werft, Sternenkarte, Imperium) sehen gleich aus:
+-- abgedunkelter Hintergrund, Panel in der Mitte, Kopfzeile mit Titel
+-- und Schliessen-Kreuz. Diese Funktion baut genau das und gibt dir den
+-- leeren Inhaltsbereich zurueck.
+--
+-- Benutzung:
+--     local fenster = UiKit.Fenster({ Name = "MeinGui", Titel = "WERFT" })
+--     -- ... etwas in fenster.Inhalt bauen ...
+--     fenster:SetzeOffen(true)
+-- ================================================================
+function UiKit.Fenster(konfiguration: { [string]: any })
+	local spielerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+
+	local gui = UiKit.Neu("ScreenGui", {
+		Name = konfiguration.Name or "Fenster",
+		ResetOnSpawn = false,
+		DisplayOrder = konfiguration.Ebene or 5,
+		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+	}, spielerGui)
+
+	-- Bewusst ein TextButton und kein Frame: nur Knoepfe melden Klicks.
+	local hintergrund = UiKit.Neu("TextButton", {
+		Name = "Hintergrund",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+		BackgroundTransparency = 0.45,
+		BorderSizePixel = 0,
+		AutoButtonColor = false,
+		Text = "",
+		Visible = false,
+	}, gui)
+
+	local panel = UiKit.Neu("Frame", {
+		Name = "Panel",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.new(0.92, 0, 0.88, 0),
+		BackgroundColor3 = UiKit.Farben.Panel,
+		BorderSizePixel = 0,
+		-- Active = true laesst das Panel Klicks schlucken. Ohne das wuerde
+		-- ein Klick mitten ins Fenster den Hintergrund-Knopf darunter
+		-- ausloesen und das Fenster sofort wieder schliessen.
+		Active = true,
+	}, hintergrund)
+	UiKit.Ecken(panel, 14)
+	UiKit.Rand(panel, UiKit.Farben.PanelRand, 1.5, 0.45)
+	UiKit.Abstand(panel, 12)
+
+	UiKit.Neu("UISizeConstraint", {
+		MaxSize = konfiguration.MaxGroesse or Vector2.new(640, 560),
+		MinSize = Vector2.new(280, 320),
+	}, panel)
+
+	UiKit.Text({
+		Name = "Titel",
+		Size = UDim2.new(1, -44, 0, 26),
+		Font = Enum.Font.GothamBlack,
+		TextSize = 20,
+		Text = konfiguration.Titel or "",
+	}, panel)
+
+	UiKit.Text({
+		Name = "Untertitel",
+		Position = UDim2.new(0, 0, 0, 24),
+		Size = UDim2.new(1, -44, 0, 14),
+		TextSize = 11,
+		TextColor3 = UiKit.Farben.TextGedimmt,
+		Text = konfiguration.Untertitel or "",
+	}, panel)
+
+	local schliessen = UiKit.Knopf({
+		Name = "Schliessen",
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, 0, 0, 0),
+		Size = UDim2.new(0, 34, 0, 34),
+		BackgroundColor3 = UiKit.Farben.PanelHell,
+		TextColor3 = UiKit.Farben.Text,
+		TextSize = 16,
+		Text = "X",
+	}, panel)
+
+	local inhalt = UiKit.Neu("Frame", {
+		Name = "Inhalt",
+		Position = UDim2.new(0, 0, 0, 48),
+		Size = UDim2.new(1, 0, 1, -48),
+		BackgroundTransparency = 1,
+	}, panel)
+
+	local fenster = {
+		Gui = gui,
+		Hintergrund = hintergrund,
+		Panel = panel,
+		Inhalt = inhalt,
+		Offen = false,
+		BeimOeffnen = nil :: (() -> ())?,
+	}
+
+	function fenster:SetzeOffen(neuerZustand: boolean)
+		self.Offen = neuerZustand
+		hintergrund.Visible = neuerZustand
+
+		if neuerZustand then
+			if self.BeimOeffnen then
+				self.BeimOeffnen()
+			end
+
+			-- Kleine Aufzieh-Animation
+			panel.Size = UDim2.new(0.92, 0, 0.8, 0)
+			game:GetService("TweenService"):Create(
+				panel,
+				TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+				{ Size = UDim2.new(0.92, 0, 0.88, 0) }
+			):Play()
+		end
+	end
+
+	function fenster:Umschalten()
+		self:SetzeOffen(not self.Offen)
+	end
+
+	schliessen.Activated:Connect(function()
+		fenster:SetzeOffen(false)
+	end)
+
+	-- Klick neben das Panel schliesst das Fenster
+	hintergrund.Activated:Connect(function()
+		fenster:SetzeOffen(false)
+	end)
+
+	return fenster
+end
+
+return UiKit.Farben.Text
 end
 
 -- ================================================================
@@ -72,11 +612,281 @@ function UiKit.Neu(klasse: string, eigenschaften: { [string]: any }?, eltern: In
 end
 
 function UiKit.Ecken(eltern: Instance, radius: number)
-	return UiKit.Neu("UICorner", { CornerRadius = UDim.new(0, radius) }, eltern)
+	-- ================================================================
+-- FENSTER
+--
+-- Alle Menue-Fenster (Werft, Sternenkarte, Imperium) sehen gleich aus:
+-- abgedunkelter Hintergrund, Panel in der Mitte, Kopfzeile mit Titel
+-- und Schliessen-Kreuz. Diese Funktion baut genau das und gibt dir den
+-- leeren Inhaltsbereich zurueck.
+--
+-- Benutzung:
+--     local fenster = UiKit.Fenster({ Name = "MeinGui", Titel = "WERFT" })
+--     -- ... etwas in fenster.Inhalt bauen ...
+--     fenster:SetzeOffen(true)
+-- ================================================================
+function UiKit.Fenster(konfiguration: { [string]: any })
+	local spielerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+
+	local gui = UiKit.Neu("ScreenGui", {
+		Name = konfiguration.Name or "Fenster",
+		ResetOnSpawn = false,
+		DisplayOrder = konfiguration.Ebene or 5,
+		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+	}, spielerGui)
+
+	-- Bewusst ein TextButton und kein Frame: nur Knoepfe melden Klicks.
+	local hintergrund = UiKit.Neu("TextButton", {
+		Name = "Hintergrund",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+		BackgroundTransparency = 0.45,
+		BorderSizePixel = 0,
+		AutoButtonColor = false,
+		Text = "",
+		Visible = false,
+	}, gui)
+
+	local panel = UiKit.Neu("Frame", {
+		Name = "Panel",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.new(0.92, 0, 0.88, 0),
+		BackgroundColor3 = UiKit.Farben.Panel,
+		BorderSizePixel = 0,
+		-- Active = true laesst das Panel Klicks schlucken. Ohne das wuerde
+		-- ein Klick mitten ins Fenster den Hintergrund-Knopf darunter
+		-- ausloesen und das Fenster sofort wieder schliessen.
+		Active = true,
+	}, hintergrund)
+	UiKit.Ecken(panel, 14)
+	UiKit.Rand(panel, UiKit.Farben.PanelRand, 1.5, 0.45)
+	UiKit.Abstand(panel, 12)
+
+	UiKit.Neu("UISizeConstraint", {
+		MaxSize = konfiguration.MaxGroesse or Vector2.new(640, 560),
+		MinSize = Vector2.new(280, 320),
+	}, panel)
+
+	UiKit.Text({
+		Name = "Titel",
+		Size = UDim2.new(1, -44, 0, 26),
+		Font = Enum.Font.GothamBlack,
+		TextSize = 20,
+		Text = konfiguration.Titel or "",
+	}, panel)
+
+	UiKit.Text({
+		Name = "Untertitel",
+		Position = UDim2.new(0, 0, 0, 24),
+		Size = UDim2.new(1, -44, 0, 14),
+		TextSize = 11,
+		TextColor3 = UiKit.Farben.TextGedimmt,
+		Text = konfiguration.Untertitel or "",
+	}, panel)
+
+	local schliessen = UiKit.Knopf({
+		Name = "Schliessen",
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, 0, 0, 0),
+		Size = UDim2.new(0, 34, 0, 34),
+		BackgroundColor3 = UiKit.Farben.PanelHell,
+		TextColor3 = UiKit.Farben.Text,
+		TextSize = 16,
+		Text = "X",
+	}, panel)
+
+	local inhalt = UiKit.Neu("Frame", {
+		Name = "Inhalt",
+		Position = UDim2.new(0, 0, 0, 48),
+		Size = UDim2.new(1, 0, 1, -48),
+		BackgroundTransparency = 1,
+	}, panel)
+
+	local fenster = {
+		Gui = gui,
+		Hintergrund = hintergrund,
+		Panel = panel,
+		Inhalt = inhalt,
+		Offen = false,
+		BeimOeffnen = nil :: (() -> ())?,
+	}
+
+	function fenster:SetzeOffen(neuerZustand: boolean)
+		self.Offen = neuerZustand
+		hintergrund.Visible = neuerZustand
+
+		if neuerZustand then
+			if self.BeimOeffnen then
+				self.BeimOeffnen()
+			end
+
+			-- Kleine Aufzieh-Animation
+			panel.Size = UDim2.new(0.92, 0, 0.8, 0)
+			game:GetService("TweenService"):Create(
+				panel,
+				TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+				{ Size = UDim2.new(0.92, 0, 0.88, 0) }
+			):Play()
+		end
+	end
+
+	function fenster:Umschalten()
+		self:SetzeOffen(not self.Offen)
+	end
+
+	schliessen.Activated:Connect(function()
+		fenster:SetzeOffen(false)
+	end)
+
+	-- Klick neben das Panel schliesst das Fenster
+	hintergrund.Activated:Connect(function()
+		fenster:SetzeOffen(false)
+	end)
+
+	return fenster
+end
+
+return UiKit.Neu("UICorner", { CornerRadius = UDim.new(0, radius) }, eltern)
 end
 
 function UiKit.Rand(eltern: Instance, farbe: Color3, dicke: number?, transparenz: number?)
-	return UiKit.Neu("UIStroke", {
+	-- ================================================================
+-- FENSTER
+--
+-- Alle Menue-Fenster (Werft, Sternenkarte, Imperium) sehen gleich aus:
+-- abgedunkelter Hintergrund, Panel in der Mitte, Kopfzeile mit Titel
+-- und Schliessen-Kreuz. Diese Funktion baut genau das und gibt dir den
+-- leeren Inhaltsbereich zurueck.
+--
+-- Benutzung:
+--     local fenster = UiKit.Fenster({ Name = "MeinGui", Titel = "WERFT" })
+--     -- ... etwas in fenster.Inhalt bauen ...
+--     fenster:SetzeOffen(true)
+-- ================================================================
+function UiKit.Fenster(konfiguration: { [string]: any })
+	local spielerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+
+	local gui = UiKit.Neu("ScreenGui", {
+		Name = konfiguration.Name or "Fenster",
+		ResetOnSpawn = false,
+		DisplayOrder = konfiguration.Ebene or 5,
+		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+	}, spielerGui)
+
+	-- Bewusst ein TextButton und kein Frame: nur Knoepfe melden Klicks.
+	local hintergrund = UiKit.Neu("TextButton", {
+		Name = "Hintergrund",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+		BackgroundTransparency = 0.45,
+		BorderSizePixel = 0,
+		AutoButtonColor = false,
+		Text = "",
+		Visible = false,
+	}, gui)
+
+	local panel = UiKit.Neu("Frame", {
+		Name = "Panel",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.new(0.92, 0, 0.88, 0),
+		BackgroundColor3 = UiKit.Farben.Panel,
+		BorderSizePixel = 0,
+		-- Active = true laesst das Panel Klicks schlucken. Ohne das wuerde
+		-- ein Klick mitten ins Fenster den Hintergrund-Knopf darunter
+		-- ausloesen und das Fenster sofort wieder schliessen.
+		Active = true,
+	}, hintergrund)
+	UiKit.Ecken(panel, 14)
+	UiKit.Rand(panel, UiKit.Farben.PanelRand, 1.5, 0.45)
+	UiKit.Abstand(panel, 12)
+
+	UiKit.Neu("UISizeConstraint", {
+		MaxSize = konfiguration.MaxGroesse or Vector2.new(640, 560),
+		MinSize = Vector2.new(280, 320),
+	}, panel)
+
+	UiKit.Text({
+		Name = "Titel",
+		Size = UDim2.new(1, -44, 0, 26),
+		Font = Enum.Font.GothamBlack,
+		TextSize = 20,
+		Text = konfiguration.Titel or "",
+	}, panel)
+
+	UiKit.Text({
+		Name = "Untertitel",
+		Position = UDim2.new(0, 0, 0, 24),
+		Size = UDim2.new(1, -44, 0, 14),
+		TextSize = 11,
+		TextColor3 = UiKit.Farben.TextGedimmt,
+		Text = konfiguration.Untertitel or "",
+	}, panel)
+
+	local schliessen = UiKit.Knopf({
+		Name = "Schliessen",
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, 0, 0, 0),
+		Size = UDim2.new(0, 34, 0, 34),
+		BackgroundColor3 = UiKit.Farben.PanelHell,
+		TextColor3 = UiKit.Farben.Text,
+		TextSize = 16,
+		Text = "X",
+	}, panel)
+
+	local inhalt = UiKit.Neu("Frame", {
+		Name = "Inhalt",
+		Position = UDim2.new(0, 0, 0, 48),
+		Size = UDim2.new(1, 0, 1, -48),
+		BackgroundTransparency = 1,
+	}, panel)
+
+	local fenster = {
+		Gui = gui,
+		Hintergrund = hintergrund,
+		Panel = panel,
+		Inhalt = inhalt,
+		Offen = false,
+		BeimOeffnen = nil :: (() -> ())?,
+	}
+
+	function fenster:SetzeOffen(neuerZustand: boolean)
+		self.Offen = neuerZustand
+		hintergrund.Visible = neuerZustand
+
+		if neuerZustand then
+			if self.BeimOeffnen then
+				self.BeimOeffnen()
+			end
+
+			-- Kleine Aufzieh-Animation
+			panel.Size = UDim2.new(0.92, 0, 0.8, 0)
+			game:GetService("TweenService"):Create(
+				panel,
+				TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+				{ Size = UDim2.new(0.92, 0, 0.88, 0) }
+			):Play()
+		end
+	end
+
+	function fenster:Umschalten()
+		self:SetzeOffen(not self.Offen)
+	end
+
+	schliessen.Activated:Connect(function()
+		fenster:SetzeOffen(false)
+	end)
+
+	-- Klick neben das Panel schliesst das Fenster
+	hintergrund.Activated:Connect(function()
+		fenster:SetzeOffen(false)
+	end)
+
+	return fenster
+end
+
+return UiKit.Neu("UIStroke", {
 		Color = farbe,
 		Thickness = dicke or 1,
 		Transparency = transparenz or 0.4,
@@ -84,7 +894,142 @@ function UiKit.Rand(eltern: Instance, farbe: Color3, dicke: number?, transparenz
 end
 
 function UiKit.Abstand(eltern: Instance, pixel: number)
-	return UiKit.Neu("UIPadding", {
+	-- ================================================================
+-- FENSTER
+--
+-- Alle Menue-Fenster (Werft, Sternenkarte, Imperium) sehen gleich aus:
+-- abgedunkelter Hintergrund, Panel in der Mitte, Kopfzeile mit Titel
+-- und Schliessen-Kreuz. Diese Funktion baut genau das und gibt dir den
+-- leeren Inhaltsbereich zurueck.
+--
+-- Benutzung:
+--     local fenster = UiKit.Fenster({ Name = "MeinGui", Titel = "WERFT" })
+--     -- ... etwas in fenster.Inhalt bauen ...
+--     fenster:SetzeOffen(true)
+-- ================================================================
+function UiKit.Fenster(konfiguration: { [string]: any })
+	local spielerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+
+	local gui = UiKit.Neu("ScreenGui", {
+		Name = konfiguration.Name or "Fenster",
+		ResetOnSpawn = false,
+		DisplayOrder = konfiguration.Ebene or 5,
+		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+	}, spielerGui)
+
+	-- Bewusst ein TextButton und kein Frame: nur Knoepfe melden Klicks.
+	local hintergrund = UiKit.Neu("TextButton", {
+		Name = "Hintergrund",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+		BackgroundTransparency = 0.45,
+		BorderSizePixel = 0,
+		AutoButtonColor = false,
+		Text = "",
+		Visible = false,
+	}, gui)
+
+	local panel = UiKit.Neu("Frame", {
+		Name = "Panel",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.new(0.92, 0, 0.88, 0),
+		BackgroundColor3 = UiKit.Farben.Panel,
+		BorderSizePixel = 0,
+		-- Active = true laesst das Panel Klicks schlucken. Ohne das wuerde
+		-- ein Klick mitten ins Fenster den Hintergrund-Knopf darunter
+		-- ausloesen und das Fenster sofort wieder schliessen.
+		Active = true,
+	}, hintergrund)
+	UiKit.Ecken(panel, 14)
+	UiKit.Rand(panel, UiKit.Farben.PanelRand, 1.5, 0.45)
+	UiKit.Abstand(panel, 12)
+
+	UiKit.Neu("UISizeConstraint", {
+		MaxSize = konfiguration.MaxGroesse or Vector2.new(640, 560),
+		MinSize = Vector2.new(280, 320),
+	}, panel)
+
+	UiKit.Text({
+		Name = "Titel",
+		Size = UDim2.new(1, -44, 0, 26),
+		Font = Enum.Font.GothamBlack,
+		TextSize = 20,
+		Text = konfiguration.Titel or "",
+	}, panel)
+
+	UiKit.Text({
+		Name = "Untertitel",
+		Position = UDim2.new(0, 0, 0, 24),
+		Size = UDim2.new(1, -44, 0, 14),
+		TextSize = 11,
+		TextColor3 = UiKit.Farben.TextGedimmt,
+		Text = konfiguration.Untertitel or "",
+	}, panel)
+
+	local schliessen = UiKit.Knopf({
+		Name = "Schliessen",
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, 0, 0, 0),
+		Size = UDim2.new(0, 34, 0, 34),
+		BackgroundColor3 = UiKit.Farben.PanelHell,
+		TextColor3 = UiKit.Farben.Text,
+		TextSize = 16,
+		Text = "X",
+	}, panel)
+
+	local inhalt = UiKit.Neu("Frame", {
+		Name = "Inhalt",
+		Position = UDim2.new(0, 0, 0, 48),
+		Size = UDim2.new(1, 0, 1, -48),
+		BackgroundTransparency = 1,
+	}, panel)
+
+	local fenster = {
+		Gui = gui,
+		Hintergrund = hintergrund,
+		Panel = panel,
+		Inhalt = inhalt,
+		Offen = false,
+		BeimOeffnen = nil :: (() -> ())?,
+	}
+
+	function fenster:SetzeOffen(neuerZustand: boolean)
+		self.Offen = neuerZustand
+		hintergrund.Visible = neuerZustand
+
+		if neuerZustand then
+			if self.BeimOeffnen then
+				self.BeimOeffnen()
+			end
+
+			-- Kleine Aufzieh-Animation
+			panel.Size = UDim2.new(0.92, 0, 0.8, 0)
+			game:GetService("TweenService"):Create(
+				panel,
+				TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+				{ Size = UDim2.new(0.92, 0, 0.88, 0) }
+			):Play()
+		end
+	end
+
+	function fenster:Umschalten()
+		self:SetzeOffen(not self.Offen)
+	end
+
+	schliessen.Activated:Connect(function()
+		fenster:SetzeOffen(false)
+	end)
+
+	-- Klick neben das Panel schliesst das Fenster
+	hintergrund.Activated:Connect(function()
+		fenster:SetzeOffen(false)
+	end)
+
+	return fenster
+end
+
+return UiKit.Neu("UIPadding", {
 		PaddingTop = UDim.new(0, pixel),
 		PaddingBottom = UDim.new(0, pixel),
 		PaddingLeft = UDim.new(0, pixel),
@@ -104,7 +1049,142 @@ function UiKit.Text(eigenschaften: { [string]: any }, eltern: Instance?)
 	for schluessel, wert in eigenschaften do
 		standard[schluessel] = wert
 	end
-	return UiKit.Neu("TextLabel", standard, eltern)
+	-- ================================================================
+-- FENSTER
+--
+-- Alle Menue-Fenster (Werft, Sternenkarte, Imperium) sehen gleich aus:
+-- abgedunkelter Hintergrund, Panel in der Mitte, Kopfzeile mit Titel
+-- und Schliessen-Kreuz. Diese Funktion baut genau das und gibt dir den
+-- leeren Inhaltsbereich zurueck.
+--
+-- Benutzung:
+--     local fenster = UiKit.Fenster({ Name = "MeinGui", Titel = "WERFT" })
+--     -- ... etwas in fenster.Inhalt bauen ...
+--     fenster:SetzeOffen(true)
+-- ================================================================
+function UiKit.Fenster(konfiguration: { [string]: any })
+	local spielerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+
+	local gui = UiKit.Neu("ScreenGui", {
+		Name = konfiguration.Name or "Fenster",
+		ResetOnSpawn = false,
+		DisplayOrder = konfiguration.Ebene or 5,
+		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+	}, spielerGui)
+
+	-- Bewusst ein TextButton und kein Frame: nur Knoepfe melden Klicks.
+	local hintergrund = UiKit.Neu("TextButton", {
+		Name = "Hintergrund",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+		BackgroundTransparency = 0.45,
+		BorderSizePixel = 0,
+		AutoButtonColor = false,
+		Text = "",
+		Visible = false,
+	}, gui)
+
+	local panel = UiKit.Neu("Frame", {
+		Name = "Panel",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.new(0.92, 0, 0.88, 0),
+		BackgroundColor3 = UiKit.Farben.Panel,
+		BorderSizePixel = 0,
+		-- Active = true laesst das Panel Klicks schlucken. Ohne das wuerde
+		-- ein Klick mitten ins Fenster den Hintergrund-Knopf darunter
+		-- ausloesen und das Fenster sofort wieder schliessen.
+		Active = true,
+	}, hintergrund)
+	UiKit.Ecken(panel, 14)
+	UiKit.Rand(panel, UiKit.Farben.PanelRand, 1.5, 0.45)
+	UiKit.Abstand(panel, 12)
+
+	UiKit.Neu("UISizeConstraint", {
+		MaxSize = konfiguration.MaxGroesse or Vector2.new(640, 560),
+		MinSize = Vector2.new(280, 320),
+	}, panel)
+
+	UiKit.Text({
+		Name = "Titel",
+		Size = UDim2.new(1, -44, 0, 26),
+		Font = Enum.Font.GothamBlack,
+		TextSize = 20,
+		Text = konfiguration.Titel or "",
+	}, panel)
+
+	UiKit.Text({
+		Name = "Untertitel",
+		Position = UDim2.new(0, 0, 0, 24),
+		Size = UDim2.new(1, -44, 0, 14),
+		TextSize = 11,
+		TextColor3 = UiKit.Farben.TextGedimmt,
+		Text = konfiguration.Untertitel or "",
+	}, panel)
+
+	local schliessen = UiKit.Knopf({
+		Name = "Schliessen",
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, 0, 0, 0),
+		Size = UDim2.new(0, 34, 0, 34),
+		BackgroundColor3 = UiKit.Farben.PanelHell,
+		TextColor3 = UiKit.Farben.Text,
+		TextSize = 16,
+		Text = "X",
+	}, panel)
+
+	local inhalt = UiKit.Neu("Frame", {
+		Name = "Inhalt",
+		Position = UDim2.new(0, 0, 0, 48),
+		Size = UDim2.new(1, 0, 1, -48),
+		BackgroundTransparency = 1,
+	}, panel)
+
+	local fenster = {
+		Gui = gui,
+		Hintergrund = hintergrund,
+		Panel = panel,
+		Inhalt = inhalt,
+		Offen = false,
+		BeimOeffnen = nil :: (() -> ())?,
+	}
+
+	function fenster:SetzeOffen(neuerZustand: boolean)
+		self.Offen = neuerZustand
+		hintergrund.Visible = neuerZustand
+
+		if neuerZustand then
+			if self.BeimOeffnen then
+				self.BeimOeffnen()
+			end
+
+			-- Kleine Aufzieh-Animation
+			panel.Size = UDim2.new(0.92, 0, 0.8, 0)
+			game:GetService("TweenService"):Create(
+				panel,
+				TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+				{ Size = UDim2.new(0.92, 0, 0.88, 0) }
+			):Play()
+		end
+	end
+
+	function fenster:Umschalten()
+		self:SetzeOffen(not self.Offen)
+	end
+
+	schliessen.Activated:Connect(function()
+		fenster:SetzeOffen(false)
+	end)
+
+	-- Klick neben das Panel schliesst das Fenster
+	hintergrund.Activated:Connect(function()
+		fenster:SetzeOffen(false)
+	end)
+
+	return fenster
+end
+
+return UiKit.Neu("TextLabel", standard, eltern)
 end
 
 -- Standard-Knopf
@@ -189,6 +1269,141 @@ function UiKit.LeistenKnopf(text: string, reihenfolge: number): TextButton
 
 	UiKit.Rand(knopf, UiKit.Farben.PanelRand, 1.5, 0.5)
 	return knopf
+end
+
+-- ================================================================
+-- FENSTER
+--
+-- Alle Menue-Fenster (Werft, Sternenkarte, Imperium) sehen gleich aus:
+-- abgedunkelter Hintergrund, Panel in der Mitte, Kopfzeile mit Titel
+-- und Schliessen-Kreuz. Diese Funktion baut genau das und gibt dir den
+-- leeren Inhaltsbereich zurueck.
+--
+-- Benutzung:
+--     local fenster = UiKit.Fenster({ Name = "MeinGui", Titel = "WERFT" })
+--     -- ... etwas in fenster.Inhalt bauen ...
+--     fenster:SetzeOffen(true)
+-- ================================================================
+function UiKit.Fenster(konfiguration: { [string]: any })
+	local spielerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+
+	local gui = UiKit.Neu("ScreenGui", {
+		Name = konfiguration.Name or "Fenster",
+		ResetOnSpawn = false,
+		DisplayOrder = konfiguration.Ebene or 5,
+		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+	}, spielerGui)
+
+	-- Bewusst ein TextButton und kein Frame: nur Knoepfe melden Klicks.
+	local hintergrund = UiKit.Neu("TextButton", {
+		Name = "Hintergrund",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+		BackgroundTransparency = 0.45,
+		BorderSizePixel = 0,
+		AutoButtonColor = false,
+		Text = "",
+		Visible = false,
+	}, gui)
+
+	local panel = UiKit.Neu("Frame", {
+		Name = "Panel",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.new(0.92, 0, 0.88, 0),
+		BackgroundColor3 = UiKit.Farben.Panel,
+		BorderSizePixel = 0,
+		-- Active = true laesst das Panel Klicks schlucken. Ohne das wuerde
+		-- ein Klick mitten ins Fenster den Hintergrund-Knopf darunter
+		-- ausloesen und das Fenster sofort wieder schliessen.
+		Active = true,
+	}, hintergrund)
+	UiKit.Ecken(panel, 14)
+	UiKit.Rand(panel, UiKit.Farben.PanelRand, 1.5, 0.45)
+	UiKit.Abstand(panel, 12)
+
+	UiKit.Neu("UISizeConstraint", {
+		MaxSize = konfiguration.MaxGroesse or Vector2.new(640, 560),
+		MinSize = Vector2.new(280, 320),
+	}, panel)
+
+	UiKit.Text({
+		Name = "Titel",
+		Size = UDim2.new(1, -44, 0, 26),
+		Font = Enum.Font.GothamBlack,
+		TextSize = 20,
+		Text = konfiguration.Titel or "",
+	}, panel)
+
+	UiKit.Text({
+		Name = "Untertitel",
+		Position = UDim2.new(0, 0, 0, 24),
+		Size = UDim2.new(1, -44, 0, 14),
+		TextSize = 11,
+		TextColor3 = UiKit.Farben.TextGedimmt,
+		Text = konfiguration.Untertitel or "",
+	}, panel)
+
+	local schliessen = UiKit.Knopf({
+		Name = "Schliessen",
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, 0, 0, 0),
+		Size = UDim2.new(0, 34, 0, 34),
+		BackgroundColor3 = UiKit.Farben.PanelHell,
+		TextColor3 = UiKit.Farben.Text,
+		TextSize = 16,
+		Text = "X",
+	}, panel)
+
+	local inhalt = UiKit.Neu("Frame", {
+		Name = "Inhalt",
+		Position = UDim2.new(0, 0, 0, 48),
+		Size = UDim2.new(1, 0, 1, -48),
+		BackgroundTransparency = 1,
+	}, panel)
+
+	local fenster = {
+		Gui = gui,
+		Hintergrund = hintergrund,
+		Panel = panel,
+		Inhalt = inhalt,
+		Offen = false,
+		BeimOeffnen = nil :: (() -> ())?,
+	}
+
+	function fenster:SetzeOffen(neuerZustand: boolean)
+		self.Offen = neuerZustand
+		hintergrund.Visible = neuerZustand
+
+		if neuerZustand then
+			if self.BeimOeffnen then
+				self.BeimOeffnen()
+			end
+
+			-- Kleine Aufzieh-Animation
+			panel.Size = UDim2.new(0.92, 0, 0.8, 0)
+			game:GetService("TweenService"):Create(
+				panel,
+				TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+				{ Size = UDim2.new(0.92, 0, 0.88, 0) }
+			):Play()
+		end
+	end
+
+	function fenster:Umschalten()
+		self:SetzeOffen(not self.Offen)
+	end
+
+	schliessen.Activated:Connect(function()
+		fenster:SetzeOffen(false)
+	end)
+
+	-- Klick neben das Panel schliesst das Fenster
+	hintergrund.Activated:Connect(function()
+		fenster:SetzeOffen(false)
+	end)
+
+	return fenster
 end
 
 return UiKit

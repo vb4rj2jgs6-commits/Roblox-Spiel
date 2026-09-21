@@ -18,6 +18,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage:WaitForChild("GameConfig"))
+local PlanetConfig = require(ReplicatedStorage:WaitForChild("PlanetConfig"))
 local Util = require(ReplicatedStorage:WaitForChild("Util"))
 local Net = require(ReplicatedStorage:WaitForChild("Net"))
 
@@ -28,6 +29,42 @@ local CurrencyService = {}
 -- Spieler, deren Anzeige sich geaendert hat. Wird gebuendelt verschickt,
 -- damit wir nicht 5x pro Sekunde ein RemoteEvent pro Spieler feuern.
 local schmutzig: { [Player]: boolean } = {}
+
+-- Serverweiter Bonus aus Zufallsereignissen (z. B. Meteoritenschauer).
+-- Wird vom EventService gesetzt und gilt fuer ALLE Spieler gleichzeitig.
+CurrencyService.EventMultiplikator = 1
+CurrencyService.EventName = nil :: string?
+CurrencyService.EventEndeUm = 0
+
+-- Summiert den Spezialbonus aller eroberten Planeten einer Bonus-Art.
+-- BonusArt ist "Einkommen", "Bauzeit", "Verteidigung" oder "Lager"
+-- (siehe PlanetConfig.Typen). Andere Services rufen das ebenfalls auf.
+function CurrencyService:GetPlanetenTypBonus(spieler: Player, bonusArt: string): number
+	local daten = DataService:Get(spieler)
+	if not daten or not daten.Planeten then
+		return 0
+	end
+
+	local summe = 0
+	for planetId in daten.Planeten do
+		local planet = PlanetConfig.NachId[planetId]
+		local typ = planet and PlanetConfig.Typen[planet.Typ]
+		if typ and typ.BonusArt == bonusArt then
+			summe += typ.BonusWert
+		end
+	end
+
+	return summe
+end
+
+-- Stufe einer Technologie (0 = nicht erforscht)
+function CurrencyService:GetTechStufe(spieler: Player, techId: string): number
+	local daten = DataService:Get(spieler)
+	if not daten or not daten.Tech then
+		return 0
+	end
+	return daten.Tech[techId] or 0
+end
 
 -- ================================================================
 -- MULTIPLIKATOR
@@ -45,21 +82,27 @@ function CurrencyService:GetMultiplikator(spieler: Player): number
 
 	local basis = 1
 
-	-- Eroberte Planeten (Schritt 3)
+	-- Eroberte Planeten: +50 % pro Planet, additiv
 	local anzahlPlaneten = 0
 	for _ in daten.Planeten do
 		anzahlPlaneten += 1
 	end
 	basis += anzahlPlaneten * Config.Multiplikatoren.BonusProPlanet
 
-	-- Rebirths (Schritt 5)
+	-- Spezialbonus der Rohstoffwelten obendrauf
+	basis += self:GetPlanetenTypBonus(spieler, "Einkommen")
+
+	-- Rebirths
 	basis += (daten.Rebirths or 0) * Config.Multiplikatoren.BonusProRebirth
 
-	-- Gamepass (Schritt 6). Solange der Gamepass nicht existiert, ist der
+	-- Gamepass. Solange der Gamepass nicht existiert, ist der
 	-- Eintrag nil und der Multiplikator bleibt 1.
 	if daten.Gamepasses and daten.Gamepasses.DoppeltesEinkommen then
 		basis *= Config.Multiplikatoren.Gamepass2xEinkommen
 	end
+
+	-- Serverweites Zufallsereignis
+	basis *= self.EventMultiplikator
 
 	return basis
 end
@@ -122,7 +165,14 @@ function CurrencyService:GetLagerKapazitaet(spieler: Player): number
 			kapazitaet += eintrag.Wirkung.LagerBonus
 		end
 	end
-	return kapazitaet
+
+	-- Handelswelten und die Frachtsysteme-Technologie vergroessern das
+	-- Lager prozentual — sie wirken also auf die ausgebaute Kapazitaet.
+	local prozentual = 1
+		+ self:GetPlanetenTypBonus(spieler, "Lager")
+		+ self:GetTechStufe(spieler, "Frachtsysteme") * 0.25
+
+	return math.floor(kapazitaet * prozentual)
 end
 
 -- Legt Credits ins Lager. Gibt zurueck, wie viel wirklich passte.
@@ -216,6 +266,15 @@ function CurrencyService:Senden(spieler: Player)
 		Multiplikator = self:GetMultiplikator(spieler),
 		Rebirths = daten.Rebirths or 0,
 		GesamtVerdient = math.floor(daten.Statistik.GesamtVerdient),
+		AnzahlPlaneten = (function()
+			local n = 0
+			for _ in daten.Planeten do
+				n += 1
+			end
+			return n
+		end)(),
+		EventName = self.EventName,
+		EventRestzeit = math.max(0, self.EventEndeUm - os.clock()),
 	})
 end
 

@@ -131,6 +131,30 @@ function DropperService:Tick()
 	end
 end
 
+-- Wie viele Credits produziert dieser Spieler pro Sekunde?
+-- Gebraucht fuer Zufallsereignisse und Credit-Pakete im Shop: Deren Wert
+-- richtet sich nach der Produktion, damit ein Paket fuer Anfaenger UND
+-- fuer Fortgeschrittene sinnvoll bleibt.
+function DropperService:GetEinkommenProSekunde(spieler: Player): number
+	local plot = PlotService:GetPlot(spieler)
+	if not plot or #plot.Dropper == 0 then
+		return 0
+	end
+
+	local spielerMult = CurrencyService:GetMultiplikator(spieler)
+	local summe = 0
+
+	for _, dropper in plot.Dropper do
+		local typ = Config.DropperTypen[dropper.Typ]
+		if typ then
+			local intervall = math.max(0.2, typ.Intervall * plot.TempoMult)
+			summe += (typ.Betrag * plot.WertMult * spielerMult) / intervall
+		end
+	end
+
+	return summe
+end
+
 -- Auto-Collect: leert das Lager automatisch.
 -- Aktiv nur fuer Spieler mit dem entsprechenden Gamepass (Schritt 6).
 function DropperService:AutoSammelSchleife()

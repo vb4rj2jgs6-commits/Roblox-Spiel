@@ -1,0 +1,2531 @@
+<roblox xmlns:xmime="http://www.w3.org/2005/05/xmlmime" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.roblox.com/roblox.xsd" version="4">
+  <Item class="ModuleScript" referent="RBX1">
+    <Properties>
+      <string name="Name">FleetConfig</string>
+      <ProtectedString name="Source"><![CDATA[--[[
+	FleetConfig  —  ModuleScript
+	================================================================
+	EXPLORER-ORT:  ReplicatedStorage > FleetConfig
+
+	WARUM EINE EIGENE DATEI STATT ALLES IN GameConfig?
+	GameConfig waere sonst irgendwann 1000 Zeilen lang. Ein Modul pro
+	System haelt die Dateien lesbar — und du weisst immer sofort, wo
+	du zum Balancen hin musst.
+
+	Server UND Client brauchen diese Werte (Server rechnet, Client
+	zeigt sie in der Werft an) -> deshalb ReplicatedStorage.
+	================================================================
+]]
+
+local FleetConfig = {}
+
+-- ================================================================
+-- ALLGEMEINE FLOTTEN-REGELN
+-- ================================================================
+FleetConfig.Allgemein = {
+	-- Hangar-Plaetze. Jedes Schiff belegt je nach Klasse 1-8 Plaetze.
+	BasisKapazitaet = 12,
+	SlotsProStufe = 8,
+	MaxHangarStufe = 10,
+
+	-- Preis fuer die naechste Hangar-Stufe:
+	--   HangarBasisPreis * HangarPreisFaktor ^ aktuelleStufe
+	HangarBasisPreis = 25000,
+	HangarPreisFaktor = 2.2,
+
+	-- Bau-Warteschlange
+	MaxWarteschlange = 12,      -- so viele Auftraege gleichzeitig
+	MaxProKauf = 10,            -- so viele Schiffe pro Klick
+
+	-- Wie viele Schiffe maximal sichtbar im Orbit schweben.
+	-- Rein optisch — die Flotte selbst ist unbegrenzt gross.
+	-- Niedriger = bessere Performance auf Handys.
+	MaxSichtbar = 24,
+
+	OrbitTempo = 0.12,          -- Umdrehungen pro Sekunde (langsam = ruhig)
+}
+
+-- ================================================================
+-- SCHIFFSKLASSEN
+--
+-- Angriff      = Beitrag zur Flottenstaerke (Schritt 3: Eroberung)
+-- Verteidigung = zaehlt, wenn dich jemand angreift
+-- Platzbedarf  = belegte Hangar-Plaetze
+-- Bauzeit      = Sekunden. Die Warteschlange baut nacheinander.
+-- Tempo        = Reisegeschwindigkeit (wird in Schritt 3 gebraucht)
+-- Frachtraum   = Beute pro Angriff (wird in Schritt 3 gebraucht)
+--
+-- BALANCE-GEDANKE:
+-- Grosse Schiffe sind pro Credit UND pro Hangar-Platz staerker,
+-- brauchen aber deutlich laenger. Jaeger sind die Notloesung, wenn
+-- du schnell Staerke brauchst — z. B. um einen Planeten zu halten,
+-- der gerade angegriffen wird.
+-- ================================================================
+FleetConfig.Klassen = {
+	{
+		Id = "Jaeger",
+		Name = "Jäger",
+		Beschreibung = "Billig und sofort da. Gut, um schnell Lücken zu stopfen.",
+		Preis = 2500,
+		Angriff = 12,
+		Verteidigung = 8,
+		Platzbedarf = 1,
+		Bauzeit = 6,
+		Tempo = 100,
+		Frachtraum = 40,
+		Farbe = Color3.fromRGB(120, 200, 255),
+		Akzent = Color3.fromRGB(60, 240, 255),
+		Skalierung = 1,
+	},
+	{
+		Id = "Fregatte",
+		Name = "Fregatte",
+		Beschreibung = "Der solide Allrounder für die mittlere Spielphase.",
+		Preis = 12000,
+		Angriff = 65,
+		Verteidigung = 55,
+		Platzbedarf = 2,
+		Bauzeit = 15,
+		Tempo = 80,
+		Frachtraum = 220,
+		Farbe = Color3.fromRGB(150, 165, 200),
+		Akzent = Color3.fromRGB(90, 220, 180),
+		Skalierung = 1.5,
+	},
+	{
+		Id = "Kreuzer",
+		Name = "Kreuzer",
+		Beschreibung = "Schwere Artillerie. Rechnet sich ab dem Plasma-Reaktor.",
+		Preis = 75000,
+		Angriff = 480,
+		Verteidigung = 400,
+		Platzbedarf = 4,
+		Bauzeit = 40,
+		Tempo = 60,
+		Frachtraum = 900,
+		Farbe = Color3.fromRGB(190, 150, 230),
+		Akzent = Color3.fromRGB(255, 120, 220),
+		Skalierung = 2.2,
+	},
+	{
+		Id = "Schlachtschiff",
+		Name = "Schlachtschiff",
+		Beschreibung = "Endgame. Langsam im Bau, aber nichts hält es auf.",
+		Preis = 450000,
+		Angriff = 3400,
+		Verteidigung = 3000,
+		Platzbedarf = 8,
+		Bauzeit = 90,
+		Tempo = 45,
+		Frachtraum = 4000,
+		Farbe = Color3.fromRGB(230, 180, 110),
+		Akzent = Color3.fromRGB(255, 130, 60),
+		Skalierung = 3.2,
+	},
+	{
+		-- Exklusive Klasse fuer den Gamepass (Schritt 6 / Monetarisierung).
+		-- Solange der Gamepass nicht existiert, zeigt die Werft sie als
+		-- gesperrt an — verkauft werden kann sie nicht.
+		Id = "Phantom",
+		Name = "Phantom",
+		Beschreibung = "Tarnkreuzer. Viel Feuerkraft auf wenig Hangar-Platz.",
+		Preis = 220000,
+		Angriff = 2400,
+		Verteidigung = 1200,
+		Platzbedarf = 3,
+		Bauzeit = 50,
+		Tempo = 120,
+		Frachtraum = 1500,
+		Farbe = Color3.fromRGB(70, 75, 95),
+		Akzent = Color3.fromRGB(160, 90, 255),
+		Skalierung = 2,
+		NurGamepass = "PhantomFlotte",   -- Schluessel in daten.Gamepasses
+	},
+}
+
+-- Schneller Zugriff ueber die Id: FleetConfig.NachId["Kreuzer"]
+FleetConfig.NachId = {}
+for reihenfolge, klasse in FleetConfig.Klassen do
+	klasse.Reihenfolge = reihenfolge
+	FleetConfig.NachId[klasse.Id] = klasse
+end
+
+-- Preis der naechsten Hangar-Stufe. Gibt nil zurueck, wenn schon max.
+function FleetConfig.HangarPreis(aktuelleStufe: number): number?
+	if aktuelleStufe >= FleetConfig.Allgemein.MaxHangarStufe then
+		return nil
+	end
+	return math.floor(
+		FleetConfig.Allgemein.HangarBasisPreis
+			* FleetConfig.Allgemein.HangarPreisFaktor ^ aktuelleStufe
+	)
+end
+
+return FleetConfig
+]]></ProtectedString>
+    </Properties>
+  </Item>
+  <Item class="ModuleScript" referent="RBX2">
+    <Properties>
+      <string name="Name">GameConfig</string>
+      <ProtectedString name="Source"><![CDATA[--[[
+	GameConfig  —  ModuleScript
+	================================================================
+	EXPLORER-ORT:  ReplicatedStorage > GameConfig
+
+	WARUM HIER?
+	ReplicatedStorage ist der einzige Ordner, den Server UND Client lesen
+	koennen. Balance-Werte braucht der Server (Rechnen) und der Client
+	(Anzeigen) — deshalb liegt die Config hier und nicht im ServerStorage.
+
+	WICHTIG: Hier stehen NUR Zahlen und Texte, keine Spiellogik.
+	Wenn du das Spiel balancen willst, aenderst du ausschliesslich
+	diese Datei. Kein anderes Script muss angefasst werden.
+	================================================================
+]]
+
+local Config = {}
+
+-- ================================================================
+-- ALLGEMEIN
+-- ================================================================
+Config.Spiel = {
+	Name = "STELLAR DOMINION",
+	Waehrung = "CR",        -- Kuerzel, das in der GUI hinter der Zahl steht
+	StartGeld = 0,          -- Womit ein neuer Spieler startet
+	DebugAusgaben = true,   -- true = Server schreibt Infos in die Output-Konsole
+}
+
+-- ================================================================
+-- SPEICHERSYSTEM (DataStore)
+-- ================================================================
+Config.Speicher = {
+	-- Achtung: Wenn du diesen Namen aenderst, sind ALLE alten Spielstaende weg.
+	-- Genau das ist beim Testen manchmal gewollt ("v1" -> "v2").
+	DataStoreName = "StellarDominion_Spieler_v1",
+
+	AutoSaveIntervall = 120,     -- Sekunden zwischen automatischen Speicherungen
+	MaxVersuche = 4,             -- Wiederholungen bei Netzwerkfehlern
+	WartenZwischenVersuchen = 2, -- Sekunden (verdoppelt sich bei jedem Versuch)
+
+	-- In Roblox Studio ist DataStore-Zugriff oft blockiert
+	-- ("Studio Access to API Services" ist standardmaessig aus).
+	-- false = im Studio wird nur im Arbeitsspeicher gespeichert -> keine Fehler,
+	--         aber der Fortschritt ist nach dem Test-Stop weg. Das ist zum
+	--         Entwickeln meistens genau richtig.
+	InStudioSpeichern = false,
+}
+
+-- ================================================================
+-- PLOTS (die Raumstation-Plattformen der Spieler)
+-- ================================================================
+Config.Plot = {
+	Anzahl = 6,                                  -- Wie viele Spieler gleichzeitig
+	Groesse = Vector3.new(120, 4, 120),          -- Breite x Dicke x Tiefe
+	Abstand = 200,                               -- Abstand der Plot-Mittelpunkte
+	ProReihe = 3,                                -- Plots werden im Raster angeordnet
+	Hoehe = 0,                                   -- Y-Position der Plot-Oberflaeche
+
+	BodenFarbe   = Color3.fromRGB(38, 42, 58),
+	RandFarbe    = Color3.fromRGB(0, 190, 255),  -- Neon-Kante (Weltraum-Look)
+	FreiFarbe    = Color3.fromRGB(120, 120, 130),-- Schildfarbe, wenn Plot frei ist
+}
+
+-- ================================================================
+-- MULTIPLIKATOREN
+-- Formel (siehe CurrencyService):
+--   Gesamt = (1 + Planeten * BonusProPlanet + Rebirths * BonusProRebirth)
+--            * Gamepass-Multiplikatoren
+-- ================================================================
+Config.Multiplikatoren = {
+	-- +50 % Einkommen pro eroberten Planeten, ADDITIV.
+	-- 2 Planeten = +100 %, 3 Planeten = +150 % usw.
+	-- Setze auf 0.25 fuer sanftere Progression, oder baue auf
+	-- multiplikativ um (siehe Kommentar im CurrencyService).
+	BonusProPlanet = 0.5,
+
+	-- +25 % dauerhaft pro Rebirth (Prestige). Kommt in Schritt 5 zum Einsatz.
+	BonusProRebirth = 0.25,
+
+	-- Gamepass "Doppeltes Einkommen" (Schritt 6 / Monetarisierung)
+	Gamepass2xEinkommen = 2,
+}
+
+-- ================================================================
+-- LAGER (nicht eingesammelte Credits am Sammelkern)
+-- ================================================================
+Config.Lager = {
+	Startkapazitaet = 300,       -- Wird durch Lager-Upgrades erhoeht
+	AutoSammelIntervall = 4,     -- Sekunden (nur mit Auto-Collect-Gamepass)
+	SammelReichweite = 60,       -- Studs: so nah muss der Spieler dem Kern sein,
+	                             -- damit der Server einen Sammeln-Klick akzeptiert
+}
+
+-- ================================================================
+-- DROPPER-TYPEN
+-- Betrag  = Basis-Credits pro Lieferung
+-- Intervall = Sekunden zwischen zwei Lieferungen
+-- ================================================================
+Config.DropperTypen = {
+	Erz = {
+		Name = "Erz-Extraktor",
+		Betrag = 4,
+		Intervall = 2.5,
+		Farbe = Color3.fromRGB(200, 140, 70),
+		Material = Enum.Material.Metal,
+	},
+	Eis = {
+		Name = "Eis-Kondensator",
+		Betrag = 26,
+		Intervall = 2.2,
+		Farbe = Color3.fromRGB(120, 220, 255),
+		Material = Enum.Material.Ice,
+	},
+	Plasma = {
+		Name = "Plasma-Reaktor",
+		Betrag = 210,
+		Intervall = 2.0,
+		Farbe = Color3.fromRGB(255, 110, 200),
+		Material = Enum.Material.Neon,
+	},
+	Antimaterie = {
+		Name = "Antimaterie-Falle",
+		Betrag = 1800,
+		Intervall = 1.8,
+		Farbe = Color3.fromRGB(180, 120, 255),
+		Material = Enum.Material.Neon,
+	},
+}
+
+-- ================================================================
+-- KAUFBARE OBJEKTE (der eigentliche Tycoon-Fortschritt)
+--
+-- Jeder Eintrag erzeugt automatisch einen Kauf-Button auf dem Plot.
+-- Felder:
+--   Id           = eindeutiger Schluessel (wird so gespeichert!) — NIE aendern,
+--                  sonst verlieren Spieler ihren Fortschritt an dieser Stelle
+--   Name         = Text auf dem Button
+--   Preis        = Kosten in Credits (0 = gratis)
+--   Benoetigt    = Id, die vorher gekauft sein muss (nil = sofort sichtbar)
+--   Typ          = "Dropper" | "Upgrade" | "Lager"
+--   Position     = Lokale Position auf dem Plot (Mittelpunkt = 0,0,0)
+--   ButtonPos    = Lokale Position des Kauf-Buttons
+--   Wirkung      = nur bei Typ "Upgrade"/"Lager"
+--
+-- Reihenfolge der Liste = Reihenfolge im Spiel. Einfach erweiterbar.
+-- ================================================================
+Config.Kaufbares = {
+	-- ---------- Stufe 1 ----------
+	{ Id = "Dropper_Erz_1", Name = "Erz-Extraktor I", Preis = 0, Benoetigt = nil,
+	  Typ = "Dropper", DropperTyp = "Erz",
+	  Position = Vector3.new(-40, 0, 42), ButtonPos = Vector3.new(-24, 0, 42) },
+
+	{ Id = "Upg_Wert_1", Name = "Raffinerie I  (+50% Wert)", Preis = 200, Benoetigt = "Dropper_Erz_1",
+	  Typ = "Upgrade", Wirkung = { WertMultiplikator = 1.5 },
+	  Position = Vector3.new(40, 0, 35), ButtonPos = Vector3.new(24, 0, 35) },
+
+	{ Id = "Dropper_Erz_2", Name = "Erz-Extraktor II", Preis = 550, Benoetigt = "Upg_Wert_1",
+	  Typ = "Dropper", DropperTyp = "Erz",
+	  Position = Vector3.new(-40, 0, 28), ButtonPos = Vector3.new(-24, 0, 28) },
+
+	{ Id = "Upg_Tempo_1", Name = "Foerderband I  (-15% Zeit)", Preis = 1200, Benoetigt = "Dropper_Erz_2",
+	  Typ = "Upgrade", Wirkung = { TempoMultiplikator = 0.85 },
+	  Position = Vector3.new(40, 0, 21), ButtonPos = Vector3.new(24, 0, 21) },
+
+	{ Id = "Lager_1", Name = "Lagermodul I  (+700)", Preis = 2200, Benoetigt = "Upg_Tempo_1",
+	  Typ = "Lager", Wirkung = { LagerBonus = 700 },
+	  Position = Vector3.new(-14, 0, -34), ButtonPos = Vector3.new(-14, 0, -24) },
+
+	-- ---------- Stufe 2 ----------
+	{ Id = "Dropper_Eis_1", Name = "Eis-Kondensator I", Preis = 4500, Benoetigt = "Lager_1",
+	  Typ = "Dropper", DropperTyp = "Eis",
+	  Position = Vector3.new(-40, 0, 14), ButtonPos = Vector3.new(-24, 0, 14) },
+
+	{ Id = "Upg_Wert_2", Name = "Raffinerie II  (+80% Wert)", Preis = 9500, Benoetigt = "Dropper_Eis_1",
+	  Typ = "Upgrade", Wirkung = { WertMultiplikator = 1.8 },
+	  Position = Vector3.new(40, 0, 7), ButtonPos = Vector3.new(24, 0, 7) },
+
+	{ Id = "Dropper_Eis_2", Name = "Eis-Kondensator II", Preis = 18000, Benoetigt = "Upg_Wert_2",
+	  Typ = "Dropper", DropperTyp = "Eis",
+	  Position = Vector3.new(-40, 0, 0), ButtonPos = Vector3.new(-24, 0, 0) },
+
+	{ Id = "Upg_Tempo_2", Name = "Foerderband II  (-15% Zeit)", Preis = 35000, Benoetigt = "Dropper_Eis_2",
+	  Typ = "Upgrade", Wirkung = { TempoMultiplikator = 0.85 },
+	  Position = Vector3.new(40, 0, -7), ButtonPos = Vector3.new(24, 0, -7) },
+
+	{ Id = "Lager_2", Name = "Lagermodul II  (+6000)", Preis = 60000, Benoetigt = "Upg_Tempo_2",
+	  Typ = "Lager", Wirkung = { LagerBonus = 6000 },
+	  Position = Vector3.new(0, 0, -34), ButtonPos = Vector3.new(0, 0, -24) },
+
+	-- ---------- Stufe 3 ----------
+	{ Id = "Dropper_Plasma_1", Name = "Plasma-Reaktor I", Preis = 120000, Benoetigt = "Lager_2",
+	  Typ = "Dropper", DropperTyp = "Plasma",
+	  Position = Vector3.new(-40, 0, -14), ButtonPos = Vector3.new(-24, 0, -14) },
+
+	{ Id = "Upg_Wert_3", Name = "Raffinerie III  (+120% Wert)", Preis = 240000, Benoetigt = "Dropper_Plasma_1",
+	  Typ = "Upgrade", Wirkung = { WertMultiplikator = 2.2 },
+	  Position = Vector3.new(40, 0, -21), ButtonPos = Vector3.new(24, 0, -21) },
+
+	{ Id = "Dropper_Plasma_2", Name = "Plasma-Reaktor II", Preis = 480000, Benoetigt = "Upg_Wert_3",
+	  Typ = "Dropper", DropperTyp = "Plasma",
+	  Position = Vector3.new(-40, 0, -28), ButtonPos = Vector3.new(-24, 0, -28) },
+
+	{ Id = "Upg_Tempo_3", Name = "Foerderband III  (-20% Zeit)", Preis = 900000, Benoetigt = "Dropper_Plasma_2",
+	  Typ = "Upgrade", Wirkung = { TempoMultiplikator = 0.8 },
+	  Position = Vector3.new(40, 0, -35), ButtonPos = Vector3.new(24, 0, -35) },
+
+	{ Id = "Lager_3", Name = "Lagermodul III  (+60000)", Preis = 1500000, Benoetigt = "Upg_Tempo_3",
+	  Typ = "Lager", Wirkung = { LagerBonus = 60000 },
+	  Position = Vector3.new(14, 0, -34), ButtonPos = Vector3.new(14, 0, -24) },
+
+	-- ---------- Stufe 4 ----------
+	{ Id = "Dropper_Anti_1", Name = "Antimaterie-Falle I", Preis = 3500000, Benoetigt = "Lager_3",
+	  Typ = "Dropper", DropperTyp = "Antimaterie",
+	  Position = Vector3.new(-40, 0, -42), ButtonPos = Vector3.new(-24, 0, -42) },
+}
+
+-- ================================================================
+-- FESTE ORTE AUF DEM PLOT (lokale Koordinaten)
+-- ================================================================
+Config.PlotPunkte = {
+	Sammelkern = Vector3.new(0, 0, -46),   -- Hier landen die Lieferungen
+	Spawn      = Vector3.new(0, 0, 48),    -- Hier erscheint der Spieler
+	Werft      = Vector3.new(30, 0, 48),   -- Gebaeude zum Oeffnen der Flotten-GUI
+	Orbit      = Vector3.new(0, 75, 0),    -- Mittelpunkt der schwebenden Flotte
+}
+
+return Config
+]]></ProtectedString>
+    </Properties>
+  </Item>
+  <Item class="ModuleScript" referent="RBX3">
+    <Properties>
+      <string name="Name">Net</string>
+      <ProtectedString name="Source"><![CDATA[--[[
+	Net  —  ModuleScript
+	================================================================
+	EXPLORER-ORT:  ReplicatedStorage > Net
+
+	WARUM HIER?
+	RemoteEvents sind die einzige Bruecke zwischen Server und Client.
+	Beide Seiten muessen dieselben Objekte finden -> ReplicatedStorage.
+
+	WAS MACHT DAS MODUL?
+	Du musst die RemoteEvents NICHT von Hand im Explorer anlegen.
+	Der Server erstellt sie beim Start automatisch, der Client wartet
+	darauf. Das verhindert den klassischen Anfaengerfehler
+	"attempt to index nil with FireServer".
+
+	BENUTZUNG:
+	    local Net = require(ReplicatedStorage.Net)
+	    Net:Event("DatenUpdate"):FireClient(spieler, daten)   -- Server
+	    Net:Event("DatenUpdate").OnClientEvent:Connect(...)   -- Client
+	================================================================
+]]
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+
+local Net = {}
+
+local ORDNER_NAME = "Remotes"
+local WARTEZEIT = 20 -- Sekunden, die der Client maximal auf den Server wartet
+
+-- Alle RemoteEvents des Spiels. Neue Features tragen hier ihren Namen ein.
+local EVENT_NAMEN = {
+	-- Server -> Client
+	"DatenUpdate",       -- Geld, Lager, Multiplikator, Rebirths ...
+	"Benachrichtigung",  -- Toast-Meldung ("Zu wenig Credits!")
+	"KaufBestaetigt",    -- Feedback fuer Sound/Effekt beim Kauf
+	"FlotteUpdate",      -- Flotte, Bauwarteschlange, Hangar, Staerke
+	"PlanetUpdate",      -- Besitz und Verteidigung aller Planeten
+	"KampfErgebnis",     -- Ergebnis eines Angriffs (Sieg/Niederlage, Verluste)
+	"ImperiumUpdate",    -- Technologien, Rebirth-Stand und Shop
+
+	-- Client -> Server
+	"DatenAnfrage",      -- Client bittet um eine frische Kopie seiner Daten
+	"SammelAnfrage",     -- Spieler drueckt den "Sammeln"-Knopf in der GUI
+	"FlotteAnfrage",     -- Client bittet um frische Flottendaten
+	"SchiffBauen",       -- "Ich haette gern N Schiffe der Klasse X"
+	"HangarErweitern",   -- "Ich moechte die naechste Hangar-Stufe kaufen"
+	"PlanetAnfrage",     -- Client bittet um frische Planetendaten
+	"AngriffStarten",    -- "Ich greife Planet X an" — mehr schickt er nicht
+	"ImperiumAnfrage",   -- Client bittet um Technologie-/Rebirth-Stand
+	"TechKaufen",        -- "Ich moechte Technologie X eine Stufe hoeher"
+	"RebirthStarten",    -- "Ich moechte einen Rebirth machen"
+}
+
+-- RemoteFunctions (Client fragt, Server antwortet). Aktuell noch leer,
+-- kommt bei Flotte/Planeten dazu.
+local FUNKTION_NAMEN = {}
+
+local ordnerCache: Folder? = nil
+
+local function holeOrdner(): Folder
+	if ordnerCache and ordnerCache.Parent then
+		return ordnerCache
+	end
+
+	if RunService:IsServer() then
+		local ordner = ReplicatedStorage:FindFirstChild(ORDNER_NAME)
+		if not ordner then
+			ordner = Instance.new("Folder")
+			ordner.Name = ORDNER_NAME
+			ordner.Parent = ReplicatedStorage
+		end
+		ordnerCache = ordner :: Folder
+	else
+		ordnerCache = ReplicatedStorage:WaitForChild(ORDNER_NAME, WARTEZEIT) :: Folder
+		assert(ordnerCache, "[Net] Remotes-Ordner nicht gefunden - laeuft der Server-Main-Script?")
+	end
+
+	return ordnerCache :: Folder
+end
+
+-- Wird EINMAL vom Server aufgerufen (in Main). Legt alle Remotes an.
+function Net:ServerInit()
+	assert(RunService:IsServer(), "[Net] ServerInit darf nur auf dem Server laufen.")
+	local ordner = holeOrdner()
+
+	for _, name in EVENT_NAMEN do
+		if not ordner:FindFirstChild(name) then
+			local event = Instance.new("RemoteEvent")
+			event.Name = name
+			event.Parent = ordner
+		end
+	end
+
+	for _, name in FUNKTION_NAMEN do
+		if not ordner:FindFirstChild(name) then
+			local funktion = Instance.new("RemoteFunction")
+			funktion.Name = name
+			funktion.Parent = ordner
+		end
+	end
+end
+
+function Net:Event(name: string): RemoteEvent
+	local ordner = holeOrdner()
+	local remote = ordner:WaitForChild(name, WARTEZEIT)
+	assert(remote, ("[Net] RemoteEvent '%s' existiert nicht. In EVENT_NAMEN eintragen!"):format(name))
+	return remote :: RemoteEvent
+end
+
+function Net:Function(name: string): RemoteFunction
+	local ordner = holeOrdner()
+	local remote = ordner:WaitForChild(name, WARTEZEIT)
+	assert(remote, ("[Net] RemoteFunction '%s' existiert nicht. In FUNKTION_NAMEN eintragen!"):format(name))
+	return remote :: RemoteFunction
+end
+
+return Net
+]]></ProtectedString>
+    </Properties>
+  </Item>
+  <Item class="ModuleScript" referent="RBX4">
+    <Properties>
+      <string name="Name">PlanetConfig</string>
+      <ProtectedString name="Source"><![CDATA[--[[
+	PlanetConfig  —  ModuleScript
+	================================================================
+	EXPLORER-ORT:  ReplicatedStorage > PlanetConfig
+
+	Alle Werte rund um Planeten und Kaempfe.
+
+	WICHTIG ZUM GRUNDBONUS:
+	JEDER eroberte Planet gibt +50 % Einkommen. Dieser Wert steht in
+	GameConfig.Multiplikatoren.BonusProPlanet und gilt fuer alle Typen.
+	Der Planeten-TYP gibt ZUSAETZLICH einen Spezialbonus — siehe unten.
+	================================================================
+]]
+
+local PlanetConfig = {}
+
+-- ================================================================
+-- KAMPFREGELN
+--
+-- SIEGCHANCE = Flottenstaerke / (Flottenstaerke + Verteidigung)
+-- Gleich stark = 50 %. Doppelt so stark = 67 %. Diese Formel ist
+-- bewusst simpel: Der Spieler kann sie im Kopf nachvollziehen.
+-- ================================================================
+PlanetConfig.Kampf = {
+	Reisezeit = 4,                  -- Sekunden Flug bis zum Planeten
+	AngriffsCooldown = 30,          -- Sekunden bis zum naechsten Angriff
+	SchildNachEroberung = 180,      -- Schutzzeit fuer den neuen Besitzer
+
+	MindestChance = 0.05,           -- nie ganz aussichtslos
+	MaxChance = 0.95,               -- nie ganz sicher
+
+	-- Verluste. "GegnerAnteil" = Verteidigung / (Staerke + Verteidigung).
+	-- Einen viel schwaecheren Planeten zu nehmen kostet also fast nichts.
+	VerlustBeiSieg = 0.30,
+	VerlustBeiNiederlage = 0.55,
+	GrundverlustNiederlage = 0.15,  -- kommt bei Niederlage obendrauf
+
+	-- Wenn ein SPIELER den Planeten haelt, zaehlt ein Teil seiner
+	-- Flotten-Verteidigung mit. Sonst waeren eroberte Planeten
+	-- viel zu leicht wieder abzunehmen.
+	AnteilFlottenVerteidigung = 0.2,
+
+	-- NPC-Planeten bauen ihre Verteidigung langsam wieder auf,
+	-- wenn ein Angriff gescheitert ist.
+	RegenerationProSekunde = 0.004, -- Anteil der Basisverteidigung
+}
+
+-- ================================================================
+-- PLANETENTYPEN
+--
+-- BonusArt legt fest, wo der Spezialbonus wirkt:
+--   "Einkommen"    -> zusaetzlicher Einkommens-Multiplikator
+--   "Bauzeit"      -> Schiffe bauen schneller
+--   "Verteidigung" -> eigene Planeten sind schwerer einzunehmen
+--   "Lager"        -> groesseres Lager am Sammelkern
+--
+-- Der Wert gilt PRO PLANET dieses Typs und ist additiv.
+-- ================================================================
+PlanetConfig.Typen = {
+	Rohstoff = {
+		Name = "Rohstoffwelt",
+		Kurz = "ERZ",
+		BonusArt = "Einkommen",
+		BonusWert = 0.25,                       -- zusaetzlich zu den +50 %
+		BonusText = "+25 % Einkommen extra",
+		Farbe = Color3.fromRGB(205, 140, 75),
+		Atmosphaere = Color3.fromRGB(255, 190, 120),
+	},
+	Energie = {
+		Name = "Energiewelt",
+		Kurz = "NRG",
+		BonusArt = "Bauzeit",
+		BonusWert = 0.08,
+		BonusText = "-8 % Bauzeit in der Werft",
+		Farbe = Color3.fromRGB(90, 210, 255),
+		Atmosphaere = Color3.fromRGB(120, 240, 255),
+	},
+	Festung = {
+		Name = "Festungswelt",
+		Kurz = "FST",
+		BonusArt = "Verteidigung",
+		BonusWert = 0.30,
+		BonusText = "+30 % Verteidigung aller Planeten",
+		Farbe = Color3.fromRGB(160, 90, 95),
+		Atmosphaere = Color3.fromRGB(255, 120, 130),
+	},
+	Handel = {
+		Name = "Handelswelt",
+		Kurz = "HDL",
+		BonusArt = "Lager",
+		BonusWert = 1.0,
+		BonusText = "+100 % Lagerkapazität",
+		Farbe = Color3.fromRGB(150, 210, 140),
+		Atmosphaere = Color3.fromRGB(180, 255, 170),
+	},
+}
+
+-- ================================================================
+-- DIE PLANETEN
+--
+-- Sie liegen in einem weiten Ring um die Plots herum, damit man sie
+-- von der eigenen Station aus sieht. Die Verteidigung steigt von
+-- Planet zu Planet — das ist die Eroberungs-Reihenfolge.
+--
+-- Position = Weltkoordinate. Die Plots liegen im Bereich +-200,
+-- darum starten die Planeten erst bei Radius ~750.
+-- ================================================================
+local function ringPosition(index: number, gesamt: number, radius: number, hoehe: number): Vector3
+	local winkel = (index - 1) / gesamt * math.pi * 2
+	return Vector3.new(math.cos(winkel) * radius, hoehe, math.sin(winkel) * radius)
+end
+
+PlanetConfig.Planeten = {
+	{ Id = "P01", Name = "Ferra",     Typ = "Rohstoff", Verteidigung = 150,   Radius = 34 },
+	{ Id = "P02", Name = "Lumen",     Typ = "Energie",  Verteidigung = 450,   Radius = 30 },
+	{ Id = "P03", Name = "Kaskade",   Typ = "Handel",   Verteidigung = 1200,  Radius = 38 },
+	{ Id = "P04", Name = "Obsidia",   Typ = "Festung",  Verteidigung = 3000,  Radius = 42 },
+	{ Id = "P05", Name = "Tessara",   Typ = "Rohstoff", Verteidigung = 6500,  Radius = 36 },
+	{ Id = "P06", Name = "Helios IV", Typ = "Energie",  Verteidigung = 12000, Radius = 44 },
+	{ Id = "P07", Name = "Novaris",   Typ = "Handel",   Verteidigung = 20000, Radius = 40 },
+	{ Id = "P08", Name = "Draconis",  Typ = "Festung",  Verteidigung = 30000, Radius = 48 },
+	{ Id = "P09", Name = "Xanthe",    Typ = "Rohstoff", Verteidigung = 42000, Radius = 46 },
+	{ Id = "P10", Name = "Zenith",    Typ = "Energie",  Verteidigung = 55000, Radius = 50 },
+	{ Id = "P11", Name = "Morgath",   Typ = "Festung",  Verteidigung = 68000, Radius = 54 },
+	{ Id = "P12", Name = "Aurelia",   Typ = "Handel",   Verteidigung = 80000, Radius = 58 },
+}
+
+-- Positionen automatisch auf zwei Ringe verteilen.
+-- So musst du beim Hinzufuegen eines Planeten keine Koordinaten ausrechnen.
+for index, planet in PlanetConfig.Planeten do
+	local innererRing = index <= 6
+	planet.Position = ringPosition(
+		innererRing and index or (index - 6),
+		6,
+		innererRing and 800 or 1250,
+		innererRing and 180 or 320
+	)
+	planet.Reihenfolge = index
+end
+
+PlanetConfig.NachId = {}
+for _, planet in PlanetConfig.Planeten do
+	PlanetConfig.NachId[planet.Id] = planet
+end
+
+-- ================================================================
+-- HILFSFUNKTIONEN (Server UND Client benutzen sie, damit beide
+-- dieselbe Zahl anzeigen bzw. berechnen)
+-- ================================================================
+
+-- Siegchance als Wert zwischen 0 und 1.
+function PlanetConfig.Siegchance(staerke: number, verteidigung: number): number
+	if staerke <= 0 then
+		return 0
+	end
+	local roh = staerke / (staerke + math.max(1, verteidigung))
+	return math.clamp(roh, PlanetConfig.Kampf.MindestChance, PlanetConfig.Kampf.MaxChance)
+end
+
+-- Anteil der Flotte, der bei diesem Kampf verloren geht.
+function PlanetConfig.Verlustanteil(staerke: number, verteidigung: number, gewonnen: boolean): number
+	local gegnerAnteil = math.max(1, verteidigung) / (math.max(1, staerke) + math.max(1, verteidigung))
+
+	if gewonnen then
+		return math.clamp(PlanetConfig.Kampf.VerlustBeiSieg * gegnerAnteil, 0, 0.9)
+	end
+
+	return math.clamp(
+		PlanetConfig.Kampf.VerlustBeiNiederlage * gegnerAnteil
+			+ PlanetConfig.Kampf.GrundverlustNiederlage,
+		0,
+		0.9
+	)
+end
+
+return PlanetConfig
+]]></ProtectedString>
+    </Properties>
+  </Item>
+  <Item class="ModuleScript" referent="RBX5">
+    <Properties>
+      <string name="Name">Signal</string>
+      <ProtectedString name="Source"><![CDATA[--[[
+	Signal  —  ModuleScript
+	================================================================
+	EXPLORER-ORT:  ReplicatedStorage > Signal
+
+	WOFUER?
+	Ein "Signal" ist ein selbstgebautes Event: Ein Service ruft
+	:Feuern(...) auf, alle angemeldeten Funktionen laufen los.
+	Damit muss z. B. der PlotService den ButtonService nicht kennen —
+	das verhindert zirkulaere require()-Ketten, die in Roblox zu
+	endlosem Haengenbleiben fuehren.
+
+	WARUM NICHT EINFACH EIN BindableEvent?
+	Das ist ein haeufiger, sehr schwer zu findender Anfaengerfehler:
+	Ein BindableEvent KOPIERT jede Tabelle, die man durchschickt.
+	Der Empfaenger bekommt also nicht dieselbe Tabelle, sondern ein
+	Duplikat. Aenderungen daran verpuffen. Fuer unsere Plot-Tabellen
+	waere das fatal. Ein reines Lua-Signal reicht Werte 1:1 weiter.
+	================================================================
+]]
+
+local Signal = {}
+Signal.__index = Signal
+
+export type Verbindung = { Trennen: (Verbindung) -> () }
+
+function Signal.neu()
+	return setmetatable({ _hoerer = {} }, Signal)
+end
+
+-- Meldet eine Funktion an. Rueckgabe: Objekt mit :Trennen()
+function Signal:Verbinden(funktion: (...any) -> ())
+	table.insert(self._hoerer, funktion)
+
+	local verbindung = {}
+	function verbindung:Trennen()
+		local index = table.find(self._signal._hoerer, funktion)
+		if index then
+			table.remove(self._signal._hoerer, index)
+		end
+	end
+	verbindung._signal = self
+
+	return verbindung
+end
+
+-- Ruft alle angemeldeten Funktionen auf.
+-- Jede laeuft in einem eigenen Thread mit Fehlerabfang: Ein Fehler in
+-- einem Hoerer darf die anderen nicht mitreissen.
+function Signal:Feuern(...)
+	for _, funktion in table.clone(self._hoerer) do
+		local argumente = table.pack(...)
+		task.spawn(function()
+			local erfolg, fehler = pcall(funktion, table.unpack(argumente, 1, argumente.n))
+			if not erfolg then
+				warn("[Signal] Fehler in einem Hoerer: " .. tostring(fehler))
+			end
+		end)
+	end
+end
+
+-- Wie Feuern, aber sofort im selben Thread (Reihenfolge garantiert).
+-- Nutzen, wenn die Reaktion abgeschlossen sein muss, bevor es weitergeht.
+function Signal:FeuernSofort(...)
+	for _, funktion in table.clone(self._hoerer) do
+		local erfolg, fehler = pcall(funktion, ...)
+		if not erfolg then
+			warn("[Signal] Fehler in einem Hoerer: " .. tostring(fehler))
+		end
+	end
+end
+
+function Signal:Leeren()
+	table.clear(self._hoerer)
+end
+
+return Signal
+]]></ProtectedString>
+    </Properties>
+  </Item>
+  <Item class="ModuleScript" referent="RBX6">
+    <Properties>
+      <string name="Name">TechConfig</string>
+      <ProtectedString name="Source"><![CDATA[--[[
+	TechConfig  —  ModuleScript
+	================================================================
+	EXPLORER-ORT:  ReplicatedStorage > TechConfig
+
+	Enthaelt drei Themen, die alle zum "Imperium"-Fenster gehoeren:
+	  1. Technologie-Baum
+	  2. Rebirth / Prestige
+	  3. Monetarisierung (Gamepass- und Produkt-Ids)
+	================================================================
+]]
+
+local TechConfig = {}
+
+-- ================================================================
+-- TECHNOLOGIE-BAUM
+--
+-- Preis der naechsten Stufe = Basispreis * Faktor ^ aktuelleStufe
+-- Technologien bleiben beim Rebirth ERHALTEN — sie sind der
+-- Langzeit-Fortschritt.
+-- ================================================================
+TechConfig.Technologien = {
+	{
+		Id = "Waffensysteme",
+		Name = "Waffensysteme",
+		Beschreibung = "+15 % Angriff der gesamten Flotte pro Stufe.",
+		MaxStufe = 8,
+		Basispreis = 40000,
+		Faktor = 2.4,
+		Farbe = Color3.fromRGB(255, 120, 110),
+	},
+	{
+		Id = "Werftautomatik",
+		Name = "Werftautomatik",
+		Beschreibung = "-10 % Bauzeit in der Werft pro Stufe.",
+		MaxStufe = 6,
+		Basispreis = 30000,
+		Faktor = 2.6,
+		Farbe = Color3.fromRGB(120, 220, 180),
+	},
+	{
+		Id = "Schildmatrix",
+		Name = "Schildmatrix",
+		Beschreibung = "+20 % Verteidigung deiner eroberten Planeten pro Stufe.",
+		MaxStufe = 6,
+		Basispreis = 60000,
+		Faktor = 2.6,
+		Farbe = Color3.fromRGB(130, 170, 255),
+	},
+	{
+		Id = "Frachtsysteme",
+		Name = "Frachtsysteme",
+		Beschreibung = "+25 % Lagerkapazität pro Stufe.",
+		MaxStufe = 6,
+		Basispreis = 25000,
+		Faktor = 2.2,
+		Farbe = Color3.fromRGB(255, 205, 90),
+	},
+	{
+		Id = "Orbitalgeschuetze",
+		Name = "Orbitalgeschütze",
+		Beschreibung = "Schützt dein Lager vor Piraten. Baut sichtbare Türme auf deinem Plot.",
+		MaxStufe = 5,
+		Basispreis = 15000,
+		Faktor = 2.8,
+		Farbe = Color3.fromRGB(200, 150, 255),
+	},
+}
+
+TechConfig.NachId = {}
+for reihenfolge, tech in TechConfig.Technologien do
+	tech.Reihenfolge = reihenfolge
+	TechConfig.NachId[tech.Id] = tech
+end
+
+function TechConfig.Preis(techId: string, aktuelleStufe: number): number?
+	local tech = TechConfig.NachId[techId]
+	if not tech or aktuelleStufe >= tech.MaxStufe then
+		return nil
+	end
+	return math.floor(tech.Basispreis * tech.Faktor ^ aktuelleStufe)
+end
+
+-- ================================================================
+-- REBIRTH / PRESTIGE
+--
+-- Voraussetzung ist der GESAMTVERDIENST, nicht das aktuelle Guthaben.
+-- So kann man sich nicht durch Sparen an einem Rebirth vorbeimogeln,
+-- und Ausgeben wird nicht bestraft.
+-- ================================================================
+TechConfig.Rebirth = {
+	Grundschwelle = 250000,
+	Faktor = 6,
+
+	-- Was beim Rebirth passiert (nur zur Anzeige im Fenster —
+	-- die echte Logik steht im RebirthService):
+	WirdZurueckgesetzt = {
+		"Guthaben und Lager",
+		"Alle Basis-Ausbauten",
+		"Die komplette Flotte samt Hangar",
+	},
+	BleibtErhalten = {
+		"Eroberte Planeten",
+		"Alle Technologien",
+		"Der Rebirth-Bonus selbst",
+	},
+}
+
+function TechConfig.RebirthSchwelle(rebirths: number): number
+	return math.floor(TechConfig.Rebirth.Grundschwelle * TechConfig.Rebirth.Faktor ^ rebirths)
+end
+
+-- ================================================================
+-- ZUFALLSEREIGNISSE
+-- ================================================================
+TechConfig.Ereignisse = {
+	MinAbstand = 180,   -- Sekunden zwischen zwei Ereignissen
+	MaxAbstand = 360,
+
+	Meteoritenschauer = {
+		Name = "Meteoritenschauer",
+		Text = "Ein Meteoritenschauer zieht durch das System — doppeltes Einkommen!",
+		Dauer = 90,
+		Multiplikator = 2,
+	},
+	Piratenueberfall = {
+		Name = "Piraten-Überfall",
+		Warnung = "Piraten im Anflug! Sammle dein Lager, bevor sie da sind!",
+		Vorwarnzeit = 20,
+		-- Anteil des Lagers, den die Piraten stehlen.
+		-- Jede Stufe Orbitalgeschuetze zieht SchutzProStufe ab.
+		Grundverlust = 0.5,
+		SchutzProStufe = 0.1,
+	},
+	Handelskonvoi = {
+		Name = "Handelskonvoi",
+		Text = "Ein Handelskonvoi macht Halt — sammle die Frachtkisten ein!",
+		Dauer = 45,
+		-- Bonus = so viele Sekunden Produktion, pro Kiste
+		SekundenProduktion = 25,
+		Kisten = 3,
+	},
+}
+
+-- ================================================================
+-- MONETARISIERUNG
+--
+-- ⚠️ WICHTIG: Die Ids stehen alle auf 0 = "noch nicht angelegt".
+-- Solange eine Id 0 ist, wird der Eintrag im Shop ausgegraut und der
+-- Server ignoriert ihn — das Spiel laeuft also ohne Fehler, auch wenn
+-- du noch keine Gamepasses erstellt hast.
+--
+-- SO LEGST DU SIE AN:
+--   Gamepass:  Creator Dashboard > dein Spiel > Monetization >
+--              Passes > Create Pass. Danach die Id aus der URL
+--              (.../game-pass/1234567/...) hier eintragen.
+--   Produkt:   Monetization > Developer Products > Create.
+-- ================================================================
+TechConfig.Gamepasses = {
+	{
+		Schluessel = "DoppeltesEinkommen",
+		Id = 0,
+		Name = "Doppeltes Einkommen",
+		Beschreibung = "Dauerhaft x2 auf alle Credits aus deiner Produktion.",
+	},
+	{
+		Schluessel = "AutoCollect",
+		Id = 0,
+		Name = "Auto-Sammler",
+		Beschreibung = "Dein Lager wird automatisch geleert. Nie wieder laufen.",
+	},
+	{
+		Schluessel = "PhantomFlotte",
+		Id = 0,
+		Name = "Phantom-Flotte",
+		Beschreibung = "Schaltet die exklusive Schiffsklasse Phantom frei.",
+	},
+}
+
+TechConfig.Produkte = {
+	{
+		Schluessel = "CreditsKlein",
+		Id = 0,
+		Name = "Credit-Paket S",
+		Beschreibung = "Sofort 10 Minuten Produktion gutgeschrieben.",
+		Art = "Credits",
+		SekundenProduktion = 600,
+		Mindestbetrag = 5000,   -- damit auch Anfaenger etwas Brauchbares bekommen
+	},
+	{
+		Schluessel = "CreditsMittel",
+		Id = 0,
+		Name = "Credit-Paket M",
+		Beschreibung = "Sofort 1 Stunde Produktion gutgeschrieben.",
+		Art = "Credits",
+		SekundenProduktion = 3600,
+		Mindestbetrag = 25000,
+	},
+	{
+		Schluessel = "CreditsGross",
+		Id = 0,
+		Name = "Credit-Paket L",
+		Beschreibung = "Sofort 6 Stunden Produktion gutgeschrieben.",
+		Art = "Credits",
+		SekundenProduktion = 21600,
+		Mindestbetrag = 150000,
+	},
+	{
+		Schluessel = "WerftSofort",
+		Id = 0,
+		Name = "Werft beschleunigen",
+		Beschreibung = "Stellt alle Schiffe in der Bauwarteschlange sofort fertig.",
+		Art = "SkipBau",
+	},
+}
+
+TechConfig.GamepassNachId = {}
+for _, pass in TechConfig.Gamepasses do
+	if pass.Id ~= 0 then
+		TechConfig.GamepassNachId[pass.Id] = pass
+	end
+end
+
+TechConfig.ProduktNachId = {}
+for _, produkt in TechConfig.Produkte do
+	if produkt.Id ~= 0 then
+		TechConfig.ProduktNachId[produkt.Id] = produkt
+	end
+end
+
+return TechConfig
+]]></ProtectedString>
+    </Properties>
+  </Item>
+  <Item class="ModuleScript" referent="RBX7">
+    <Properties>
+      <string name="Name">UiKit</string>
+      <ProtectedString name="Source"><![CDATA[--[[
+	UiKit  —  ModuleScript
+	================================================================
+	EXPLORER-ORT:  ReplicatedStorage > UiKit
+
+	WOFUER?
+	Ein kleiner Baukasten fuer die Oberflaeche: Farben, abgerundete
+	Ecken, Raender, Standard-Knoepfe. Damit sehen HUD und Werft
+	automatisch gleich aus — und wenn du das Farbschema aendern
+	willst, aenderst du es genau hier an einer Stelle.
+
+	Ausserdem verwaltet UiKit die AKTIONSLEISTE am linken Bildrand.
+	Jedes Client-Script kann sich dort mit einer Zeile einen Knopf
+	dazuhaengen. So kann Schritt 3 (Planeten) spaeter einfach einen
+	weiteren Knopf ergaenzen, ohne das HUD-Script anzufassen.
+
+	Dieses Modul wird nur von LocalScripts benutzt.
+	================================================================
+]]
+
+local Players = game:GetService("Players")
+
+local UiKit = {}
+
+-- ================================================================
+-- FARBSCHEMA
+-- ================================================================
+UiKit.Farben = {
+	Panel = Color3.fromRGB(16, 19, 30),
+	PanelHell = Color3.fromRGB(26, 31, 46),
+	PanelRand = Color3.fromRGB(0, 190, 255),
+	Text = Color3.fromRGB(235, 242, 255),
+	TextGedimmt = Color3.fromRGB(140, 155, 180),
+	Akzent = Color3.fromRGB(0, 220, 255),
+	Gut = Color3.fromRGB(70, 230, 140),
+	Warnung = Color3.fromRGB(255, 90, 100),
+	Gold = Color3.fromRGB(255, 205, 90),
+	Inaktiv = Color3.fromRGB(60, 68, 88),
+}
+
+-- Uebersetzt den Farbnamen aus einer Server-Benachrichtigung in eine Farbe.
+function UiKit.FarbeAusName(name: string?): Color3
+	if name == "Warnung" then
+		-- ================================================================
+-- FENSTER
+--
+-- Alle Menue-Fenster (Werft, Sternenkarte, Imperium) sehen gleich aus:
+-- abgedunkelter Hintergrund, Panel in der Mitte, Kopfzeile mit Titel
+-- und Schliessen-Kreuz. Diese Funktion baut genau das und gibt dir den
+-- leeren Inhaltsbereich zurueck.
+--
+-- Benutzung:
+--     local fenster = UiKit.Fenster({ Name = "MeinGui", Titel = "WERFT" })
+--     -- ... etwas in fenster.Inhalt bauen ...
+--     fenster:SetzeOffen(true)
+-- ================================================================
+function UiKit.Fenster(konfiguration: { [string]: any })
+	local spielerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+
+	local gui = UiKit.Neu("ScreenGui", {
+		Name = konfiguration.Name or "Fenster",
+		ResetOnSpawn = false,
+		DisplayOrder = konfiguration.Ebene or 5,
+		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+	}, spielerGui)
+
+	-- Bewusst ein TextButton und kein Frame: nur Knoepfe melden Klicks.
+	local hintergrund = UiKit.Neu("TextButton", {
+		Name = "Hintergrund",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+		BackgroundTransparency = 0.45,
+		BorderSizePixel = 0,
+		AutoButtonColor = false,
+		Text = "",
+		Visible = false,
+	}, gui)
+
+	local panel = UiKit.Neu("Frame", {
+		Name = "Panel",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.new(0.92, 0, 0.88, 0),
+		BackgroundColor3 = UiKit.Farben.Panel,
+		BorderSizePixel = 0,
+		-- Active = true laesst das Panel Klicks schlucken. Ohne das wuerde
+		-- ein Klick mitten ins Fenster den Hintergrund-Knopf darunter
+		-- ausloesen und das Fenster sofort wieder schliessen.
+		Active = true,
+	}, hintergrund)
+	UiKit.Ecken(panel, 14)
+	UiKit.Rand(panel, UiKit.Farben.PanelRand, 1.5, 0.45)
+	UiKit.Abstand(panel, 12)
+
+	UiKit.Neu("UISizeConstraint", {
+		MaxSize = konfiguration.MaxGroesse or Vector2.new(640, 560),
+		MinSize = Vector2.new(280, 320),
+	}, panel)
+
+	UiKit.Text({
+		Name = "Titel",
+		Size = UDim2.new(1, -44, 0, 26),
+		Font = Enum.Font.GothamBlack,
+		TextSize = 20,
+		Text = konfiguration.Titel or "",
+	}, panel)
+
+	UiKit.Text({
+		Name = "Untertitel",
+		Position = UDim2.new(0, 0, 0, 24),
+		Size = UDim2.new(1, -44, 0, 14),
+		TextSize = 11,
+		TextColor3 = UiKit.Farben.TextGedimmt,
+		Text = konfiguration.Untertitel or "",
+	}, panel)
+
+	local schliessen = UiKit.Knopf({
+		Name = "Schliessen",
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, 0, 0, 0),
+		Size = UDim2.new(0, 34, 0, 34),
+		BackgroundColor3 = UiKit.Farben.PanelHell,
+		TextColor3 = UiKit.Farben.Text,
+		TextSize = 16,
+		Text = "X",
+	}, panel)
+
+	local inhalt = UiKit.Neu("Frame", {
+		Name = "Inhalt",
+		Position = UDim2.new(0, 0, 0, 48),
+		Size = UDim2.new(1, 0, 1, -48),
+		BackgroundTransparency = 1,
+	}, panel)
+
+	local fenster = {
+		Gui = gui,
+		Hintergrund = hintergrund,
+		Panel = panel,
+		Inhalt = inhalt,
+		Offen = false,
+		BeimOeffnen = nil :: (() -> ())?,
+	}
+
+	function fenster:SetzeOffen(neuerZustand: boolean)
+		self.Offen = neuerZustand
+		hintergrund.Visible = neuerZustand
+
+		if neuerZustand then
+			if self.BeimOeffnen then
+				self.BeimOeffnen()
+			end
+
+			-- Kleine Aufzieh-Animation
+			panel.Size = UDim2.new(0.92, 0, 0.8, 0)
+			game:GetService("TweenService"):Create(
+				panel,
+				TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+				{ Size = UDim2.new(0.92, 0, 0.88, 0) }
+			):Play()
+		end
+	end
+
+	function fenster:Umschalten()
+		self:SetzeOffen(not self.Offen)
+	end
+
+	schliessen.Activated:Connect(function()
+		fenster:SetzeOffen(false)
+	end)
+
+	-- Klick neben das Panel schliesst das Fenster
+	hintergrund.Activated:Connect(function()
+		fenster:SetzeOffen(false)
+	end)
+
+	return fenster
+end
+
+return UiKit.Farben.Warnung
+	elseif name == "Gut" then
+		-- ================================================================
+-- FENSTER
+--
+-- Alle Menue-Fenster (Werft, Sternenkarte, Imperium) sehen gleich aus:
+-- abgedunkelter Hintergrund, Panel in der Mitte, Kopfzeile mit Titel
+-- und Schliessen-Kreuz. Diese Funktion baut genau das und gibt dir den
+-- leeren Inhaltsbereich zurueck.
+--
+-- Benutzung:
+--     local fenster = UiKit.Fenster({ Name = "MeinGui", Titel = "WERFT" })
+--     -- ... etwas in fenster.Inhalt bauen ...
+--     fenster:SetzeOffen(true)
+-- ================================================================
+function UiKit.Fenster(konfiguration: { [string]: any })
+	local spielerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+
+	local gui = UiKit.Neu("ScreenGui", {
+		Name = konfiguration.Name or "Fenster",
+		ResetOnSpawn = false,
+		DisplayOrder = konfiguration.Ebene or 5,
+		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+	}, spielerGui)
+
+	-- Bewusst ein TextButton und kein Frame: nur Knoepfe melden Klicks.
+	local hintergrund = UiKit.Neu("TextButton", {
+		Name = "Hintergrund",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+		BackgroundTransparency = 0.45,
+		BorderSizePixel = 0,
+		AutoButtonColor = false,
+		Text = "",
+		Visible = false,
+	}, gui)
+
+	local panel = UiKit.Neu("Frame", {
+		Name = "Panel",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.new(0.92, 0, 0.88, 0),
+		BackgroundColor3 = UiKit.Farben.Panel,
+		BorderSizePixel = 0,
+		-- Active = true laesst das Panel Klicks schlucken. Ohne das wuerde
+		-- ein Klick mitten ins Fenster den Hintergrund-Knopf darunter
+		-- ausloesen und das Fenster sofort wieder schliessen.
+		Active = true,
+	}, hintergrund)
+	UiKit.Ecken(panel, 14)
+	UiKit.Rand(panel, UiKit.Farben.PanelRand, 1.5, 0.45)
+	UiKit.Abstand(panel, 12)
+
+	UiKit.Neu("UISizeConstraint", {
+		MaxSize = konfiguration.MaxGroesse or Vector2.new(640, 560),
+		MinSize = Vector2.new(280, 320),
+	}, panel)
+
+	UiKit.Text({
+		Name = "Titel",
+		Size = UDim2.new(1, -44, 0, 26),
+		Font = Enum.Font.GothamBlack,
+		TextSize = 20,
+		Text = konfiguration.Titel or "",
+	}, panel)
+
+	UiKit.Text({
+		Name = "Untertitel",
+		Position = UDim2.new(0, 0, 0, 24),
+		Size = UDim2.new(1, -44, 0, 14),
+		TextSize = 11,
+		TextColor3 = UiKit.Farben.TextGedimmt,
+		Text = konfiguration.Untertitel or "",
+	}, panel)
+
+	local schliessen = UiKit.Knopf({
+		Name = "Schliessen",
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, 0, 0, 0),
+		Size = UDim2.new(0, 34, 0, 34),
+		BackgroundColor3 = UiKit.Farben.PanelHell,
+		TextColor3 = UiKit.Farben.Text,
+		TextSize = 16,
+		Text = "X",
+	}, panel)
+
+	local inhalt = UiKit.Neu("Frame", {
+		Name = "Inhalt",
+		Position = UDim2.new(0, 0, 0, 48),
+		Size = UDim2.new(1, 0, 1, -48),
+		BackgroundTransparency = 1,
+	}, panel)
+
+	local fenster = {
+		Gui = gui,
+		Hintergrund = hintergrund,
+		Panel = panel,
+		Inhalt = inhalt,
+		Offen = false,
+		BeimOeffnen = nil :: (() -> ())?,
+	}
+
+	function fenster:SetzeOffen(neuerZustand: boolean)
+		self.Offen = neuerZustand
+		hintergrund.Visible = neuerZustand
+
+		if neuerZustand then
+			if self.BeimOeffnen then
+				self.BeimOeffnen()
+			end
+
+			-- Kleine Aufzieh-Animation
+			panel.Size = UDim2.new(0.92, 0, 0.8, 0)
+			game:GetService("TweenService"):Create(
+				panel,
+				TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+				{ Size = UDim2.new(0.92, 0, 0.88, 0) }
+			):Play()
+		end
+	end
+
+	function fenster:Umschalten()
+		self:SetzeOffen(not self.Offen)
+	end
+
+	schliessen.Activated:Connect(function()
+		fenster:SetzeOffen(false)
+	end)
+
+	-- Klick neben das Panel schliesst das Fenster
+	hintergrund.Activated:Connect(function()
+		fenster:SetzeOffen(false)
+	end)
+
+	return fenster
+end
+
+return UiKit.Farben.Gut
+	elseif name == "Gold" then
+		-- ================================================================
+-- FENSTER
+--
+-- Alle Menue-Fenster (Werft, Sternenkarte, Imperium) sehen gleich aus:
+-- abgedunkelter Hintergrund, Panel in der Mitte, Kopfzeile mit Titel
+-- und Schliessen-Kreuz. Diese Funktion baut genau das und gibt dir den
+-- leeren Inhaltsbereich zurueck.
+--
+-- Benutzung:
+--     local fenster = UiKit.Fenster({ Name = "MeinGui", Titel = "WERFT" })
+--     -- ... etwas in fenster.Inhalt bauen ...
+--     fenster:SetzeOffen(true)
+-- ================================================================
+function UiKit.Fenster(konfiguration: { [string]: any })
+	local spielerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+
+	local gui = UiKit.Neu("ScreenGui", {
+		Name = konfiguration.Name or "Fenster",
+		ResetOnSpawn = false,
+		DisplayOrder = konfiguration.Ebene or 5,
+		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+	}, spielerGui)
+
+	-- Bewusst ein TextButton und kein Frame: nur Knoepfe melden Klicks.
+	local hintergrund = UiKit.Neu("TextButton", {
+		Name = "Hintergrund",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+		BackgroundTransparency = 0.45,
+		BorderSizePixel = 0,
+		AutoButtonColor = false,
+		Text = "",
+		Visible = false,
+	}, gui)
+
+	local panel = UiKit.Neu("Frame", {
+		Name = "Panel",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.new(0.92, 0, 0.88, 0),
+		BackgroundColor3 = UiKit.Farben.Panel,
+		BorderSizePixel = 0,
+		-- Active = true laesst das Panel Klicks schlucken. Ohne das wuerde
+		-- ein Klick mitten ins Fenster den Hintergrund-Knopf darunter
+		-- ausloesen und das Fenster sofort wieder schliessen.
+		Active = true,
+	}, hintergrund)
+	UiKit.Ecken(panel, 14)
+	UiKit.Rand(panel, UiKit.Farben.PanelRand, 1.5, 0.45)
+	UiKit.Abstand(panel, 12)
+
+	UiKit.Neu("UISizeConstraint", {
+		MaxSize = konfiguration.MaxGroesse or Vector2.new(640, 560),
+		MinSize = Vector2.new(280, 320),
+	}, panel)
+
+	UiKit.Text({
+		Name = "Titel",
+		Size = UDim2.new(1, -44, 0, 26),
+		Font = Enum.Font.GothamBlack,
+		TextSize = 20,
+		Text = konfiguration.Titel or "",
+	}, panel)
+
+	UiKit.Text({
+		Name = "Untertitel",
+		Position = UDim2.new(0, 0, 0, 24),
+		Size = UDim2.new(1, -44, 0, 14),
+		TextSize = 11,
+		TextColor3 = UiKit.Farben.TextGedimmt,
+		Text = konfiguration.Untertitel or "",
+	}, panel)
+
+	local schliessen = UiKit.Knopf({
+		Name = "Schliessen",
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, 0, 0, 0),
+		Size = UDim2.new(0, 34, 0, 34),
+		BackgroundColor3 = UiKit.Farben.PanelHell,
+		TextColor3 = UiKit.Farben.Text,
+		TextSize = 16,
+		Text = "X",
+	}, panel)
+
+	local inhalt = UiKit.Neu("Frame", {
+		Name = "Inhalt",
+		Position = UDim2.new(0, 0, 0, 48),
+		Size = UDim2.new(1, 0, 1, -48),
+		BackgroundTransparency = 1,
+	}, panel)
+
+	local fenster = {
+		Gui = gui,
+		Hintergrund = hintergrund,
+		Panel = panel,
+		Inhalt = inhalt,
+		Offen = false,
+		BeimOeffnen = nil :: (() -> ())?,
+	}
+
+	function fenster:SetzeOffen(neuerZustand: boolean)
+		self.Offen = neuerZustand
+		hintergrund.Visible = neuerZustand
+
+		if neuerZustand then
+			if self.BeimOeffnen then
+				self.BeimOeffnen()
+			end
+
+			-- Kleine Aufzieh-Animation
+			panel.Size = UDim2.new(0.92, 0, 0.8, 0)
+			game:GetService("TweenService"):Create(
+				panel,
+				TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+				{ Size = UDim2.new(0.92, 0, 0.88, 0) }
+			):Play()
+		end
+	end
+
+	function fenster:Umschalten()
+		self:SetzeOffen(not self.Offen)
+	end
+
+	schliessen.Activated:Connect(function()
+		fenster:SetzeOffen(false)
+	end)
+
+	-- Klick neben das Panel schliesst das Fenster
+	hintergrund.Activated:Connect(function()
+		fenster:SetzeOffen(false)
+	end)
+
+	return fenster
+end
+
+return UiKit.Farben.Gold
+	end
+	-- ================================================================
+-- FENSTER
+--
+-- Alle Menue-Fenster (Werft, Sternenkarte, Imperium) sehen gleich aus:
+-- abgedunkelter Hintergrund, Panel in der Mitte, Kopfzeile mit Titel
+-- und Schliessen-Kreuz. Diese Funktion baut genau das und gibt dir den
+-- leeren Inhaltsbereich zurueck.
+--
+-- Benutzung:
+--     local fenster = UiKit.Fenster({ Name = "MeinGui", Titel = "WERFT" })
+--     -- ... etwas in fenster.Inhalt bauen ...
+--     fenster:SetzeOffen(true)
+-- ================================================================
+function UiKit.Fenster(konfiguration: { [string]: any })
+	local spielerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+
+	local gui = UiKit.Neu("ScreenGui", {
+		Name = konfiguration.Name or "Fenster",
+		ResetOnSpawn = false,
+		DisplayOrder = konfiguration.Ebene or 5,
+		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+	}, spielerGui)
+
+	-- Bewusst ein TextButton und kein Frame: nur Knoepfe melden Klicks.
+	local hintergrund = UiKit.Neu("TextButton", {
+		Name = "Hintergrund",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+		BackgroundTransparency = 0.45,
+		BorderSizePixel = 0,
+		AutoButtonColor = false,
+		Text = "",
+		Visible = false,
+	}, gui)
+
+	local panel = UiKit.Neu("Frame", {
+		Name = "Panel",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.new(0.92, 0, 0.88, 0),
+		BackgroundColor3 = UiKit.Farben.Panel,
+		BorderSizePixel = 0,
+		-- Active = true laesst das Panel Klicks schlucken. Ohne das wuerde
+		-- ein Klick mitten ins Fenster den Hintergrund-Knopf darunter
+		-- ausloesen und das Fenster sofort wieder schliessen.
+		Active = true,
+	}, hintergrund)
+	UiKit.Ecken(panel, 14)
+	UiKit.Rand(panel, UiKit.Farben.PanelRand, 1.5, 0.45)
+	UiKit.Abstand(panel, 12)
+
+	UiKit.Neu("UISizeConstraint", {
+		MaxSize = konfiguration.MaxGroesse or Vector2.new(640, 560),
+		MinSize = Vector2.new(280, 320),
+	}, panel)
+
+	UiKit.Text({
+		Name = "Titel",
+		Size = UDim2.new(1, -44, 0, 26),
+		Font = Enum.Font.GothamBlack,
+		TextSize = 20,
+		Text = konfiguration.Titel or "",
+	}, panel)
+
+	UiKit.Text({
+		Name = "Untertitel",
+		Position = UDim2.new(0, 0, 0, 24),
+		Size = UDim2.new(1, -44, 0, 14),
+		TextSize = 11,
+		TextColor3 = UiKit.Farben.TextGedimmt,
+		Text = konfiguration.Untertitel or "",
+	}, panel)
+
+	local schliessen = UiKit.Knopf({
+		Name = "Schliessen",
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, 0, 0, 0),
+		Size = UDim2.new(0, 34, 0, 34),
+		BackgroundColor3 = UiKit.Farben.PanelHell,
+		TextColor3 = UiKit.Farben.Text,
+		TextSize = 16,
+		Text = "X",
+	}, panel)
+
+	local inhalt = UiKit.Neu("Frame", {
+		Name = "Inhalt",
+		Position = UDim2.new(0, 0, 0, 48),
+		Size = UDim2.new(1, 0, 1, -48),
+		BackgroundTransparency = 1,
+	}, panel)
+
+	local fenster = {
+		Gui = gui,
+		Hintergrund = hintergrund,
+		Panel = panel,
+		Inhalt = inhalt,
+		Offen = false,
+		BeimOeffnen = nil :: (() -> ())?,
+	}
+
+	function fenster:SetzeOffen(neuerZustand: boolean)
+		self.Offen = neuerZustand
+		hintergrund.Visible = neuerZustand
+
+		if neuerZustand then
+			if self.BeimOeffnen then
+				self.BeimOeffnen()
+			end
+
+			-- Kleine Aufzieh-Animation
+			panel.Size = UDim2.new(0.92, 0, 0.8, 0)
+			game:GetService("TweenService"):Create(
+				panel,
+				TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+				{ Size = UDim2.new(0.92, 0, 0.88, 0) }
+			):Play()
+		end
+	end
+
+	function fenster:Umschalten()
+		self:SetzeOffen(not self.Offen)
+	end
+
+	schliessen.Activated:Connect(function()
+		fenster:SetzeOffen(false)
+	end)
+
+	-- Klick neben das Panel schliesst das Fenster
+	hintergrund.Activated:Connect(function()
+		fenster:SetzeOffen(false)
+	end)
+
+	return fenster
+end
+
+return UiKit.Farben.Text
+end
+
+-- ================================================================
+-- BAU-HELFER
+-- ================================================================
+
+-- UiKit.Neu("TextLabel", { Text = "Hallo" }, elternObjekt)
+function UiKit.Neu(klasse: string, eigenschaften: { [string]: any }?, eltern: Instance?): any
+	local objekt = Instance.new(klasse)
+
+	if eigenschaften then
+		for schluessel, wert in eigenschaften do
+			(objekt :: any)[schluessel] = wert
+		end
+	end
+
+	if eltern then
+		objekt.Parent = eltern
+	end
+
+	return objekt
+end
+
+function UiKit.Ecken(eltern: Instance, radius: number)
+	-- ================================================================
+-- FENSTER
+--
+-- Alle Menue-Fenster (Werft, Sternenkarte, Imperium) sehen gleich aus:
+-- abgedunkelter Hintergrund, Panel in der Mitte, Kopfzeile mit Titel
+-- und Schliessen-Kreuz. Diese Funktion baut genau das und gibt dir den
+-- leeren Inhaltsbereich zurueck.
+--
+-- Benutzung:
+--     local fenster = UiKit.Fenster({ Name = "MeinGui", Titel = "WERFT" })
+--     -- ... etwas in fenster.Inhalt bauen ...
+--     fenster:SetzeOffen(true)
+-- ================================================================
+function UiKit.Fenster(konfiguration: { [string]: any })
+	local spielerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+
+	local gui = UiKit.Neu("ScreenGui", {
+		Name = konfiguration.Name or "Fenster",
+		ResetOnSpawn = false,
+		DisplayOrder = konfiguration.Ebene or 5,
+		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+	}, spielerGui)
+
+	-- Bewusst ein TextButton und kein Frame: nur Knoepfe melden Klicks.
+	local hintergrund = UiKit.Neu("TextButton", {
+		Name = "Hintergrund",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+		BackgroundTransparency = 0.45,
+		BorderSizePixel = 0,
+		AutoButtonColor = false,
+		Text = "",
+		Visible = false,
+	}, gui)
+
+	local panel = UiKit.Neu("Frame", {
+		Name = "Panel",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.new(0.92, 0, 0.88, 0),
+		BackgroundColor3 = UiKit.Farben.Panel,
+		BorderSizePixel = 0,
+		-- Active = true laesst das Panel Klicks schlucken. Ohne das wuerde
+		-- ein Klick mitten ins Fenster den Hintergrund-Knopf darunter
+		-- ausloesen und das Fenster sofort wieder schliessen.
+		Active = true,
+	}, hintergrund)
+	UiKit.Ecken(panel, 14)
+	UiKit.Rand(panel, UiKit.Farben.PanelRand, 1.5, 0.45)
+	UiKit.Abstand(panel, 12)
+
+	UiKit.Neu("UISizeConstraint", {
+		MaxSize = konfiguration.MaxGroesse or Vector2.new(640, 560),
+		MinSize = Vector2.new(280, 320),
+	}, panel)
+
+	UiKit.Text({
+		Name = "Titel",
+		Size = UDim2.new(1, -44, 0, 26),
+		Font = Enum.Font.GothamBlack,
+		TextSize = 20,
+		Text = konfiguration.Titel or "",
+	}, panel)
+
+	UiKit.Text({
+		Name = "Untertitel",
+		Position = UDim2.new(0, 0, 0, 24),
+		Size = UDim2.new(1, -44, 0, 14),
+		TextSize = 11,
+		TextColor3 = UiKit.Farben.TextGedimmt,
+		Text = konfiguration.Untertitel or "",
+	}, panel)
+
+	local schliessen = UiKit.Knopf({
+		Name = "Schliessen",
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, 0, 0, 0),
+		Size = UDim2.new(0, 34, 0, 34),
+		BackgroundColor3 = UiKit.Farben.PanelHell,
+		TextColor3 = UiKit.Farben.Text,
+		TextSize = 16,
+		Text = "X",
+	}, panel)
+
+	local inhalt = UiKit.Neu("Frame", {
+		Name = "Inhalt",
+		Position = UDim2.new(0, 0, 0, 48),
+		Size = UDim2.new(1, 0, 1, -48),
+		BackgroundTransparency = 1,
+	}, panel)
+
+	local fenster = {
+		Gui = gui,
+		Hintergrund = hintergrund,
+		Panel = panel,
+		Inhalt = inhalt,
+		Offen = false,
+		BeimOeffnen = nil :: (() -> ())?,
+	}
+
+	function fenster:SetzeOffen(neuerZustand: boolean)
+		self.Offen = neuerZustand
+		hintergrund.Visible = neuerZustand
+
+		if neuerZustand then
+			if self.BeimOeffnen then
+				self.BeimOeffnen()
+			end
+
+			-- Kleine Aufzieh-Animation
+			panel.Size = UDim2.new(0.92, 0, 0.8, 0)
+			game:GetService("TweenService"):Create(
+				panel,
+				TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+				{ Size = UDim2.new(0.92, 0, 0.88, 0) }
+			):Play()
+		end
+	end
+
+	function fenster:Umschalten()
+		self:SetzeOffen(not self.Offen)
+	end
+
+	schliessen.Activated:Connect(function()
+		fenster:SetzeOffen(false)
+	end)
+
+	-- Klick neben das Panel schliesst das Fenster
+	hintergrund.Activated:Connect(function()
+		fenster:SetzeOffen(false)
+	end)
+
+	return fenster
+end
+
+return UiKit.Neu("UICorner", { CornerRadius = UDim.new(0, radius) }, eltern)
+end
+
+function UiKit.Rand(eltern: Instance, farbe: Color3, dicke: number?, transparenz: number?)
+	-- ================================================================
+-- FENSTER
+--
+-- Alle Menue-Fenster (Werft, Sternenkarte, Imperium) sehen gleich aus:
+-- abgedunkelter Hintergrund, Panel in der Mitte, Kopfzeile mit Titel
+-- und Schliessen-Kreuz. Diese Funktion baut genau das und gibt dir den
+-- leeren Inhaltsbereich zurueck.
+--
+-- Benutzung:
+--     local fenster = UiKit.Fenster({ Name = "MeinGui", Titel = "WERFT" })
+--     -- ... etwas in fenster.Inhalt bauen ...
+--     fenster:SetzeOffen(true)
+-- ================================================================
+function UiKit.Fenster(konfiguration: { [string]: any })
+	local spielerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+
+	local gui = UiKit.Neu("ScreenGui", {
+		Name = konfiguration.Name or "Fenster",
+		ResetOnSpawn = false,
+		DisplayOrder = konfiguration.Ebene or 5,
+		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+	}, spielerGui)
+
+	-- Bewusst ein TextButton und kein Frame: nur Knoepfe melden Klicks.
+	local hintergrund = UiKit.Neu("TextButton", {
+		Name = "Hintergrund",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+		BackgroundTransparency = 0.45,
+		BorderSizePixel = 0,
+		AutoButtonColor = false,
+		Text = "",
+		Visible = false,
+	}, gui)
+
+	local panel = UiKit.Neu("Frame", {
+		Name = "Panel",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.new(0.92, 0, 0.88, 0),
+		BackgroundColor3 = UiKit.Farben.Panel,
+		BorderSizePixel = 0,
+		-- Active = true laesst das Panel Klicks schlucken. Ohne das wuerde
+		-- ein Klick mitten ins Fenster den Hintergrund-Knopf darunter
+		-- ausloesen und das Fenster sofort wieder schliessen.
+		Active = true,
+	}, hintergrund)
+	UiKit.Ecken(panel, 14)
+	UiKit.Rand(panel, UiKit.Farben.PanelRand, 1.5, 0.45)
+	UiKit.Abstand(panel, 12)
+
+	UiKit.Neu("UISizeConstraint", {
+		MaxSize = konfiguration.MaxGroesse or Vector2.new(640, 560),
+		MinSize = Vector2.new(280, 320),
+	}, panel)
+
+	UiKit.Text({
+		Name = "Titel",
+		Size = UDim2.new(1, -44, 0, 26),
+		Font = Enum.Font.GothamBlack,
+		TextSize = 20,
+		Text = konfiguration.Titel or "",
+	}, panel)
+
+	UiKit.Text({
+		Name = "Untertitel",
+		Position = UDim2.new(0, 0, 0, 24),
+		Size = UDim2.new(1, -44, 0, 14),
+		TextSize = 11,
+		TextColor3 = UiKit.Farben.TextGedimmt,
+		Text = konfiguration.Untertitel or "",
+	}, panel)
+
+	local schliessen = UiKit.Knopf({
+		Name = "Schliessen",
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, 0, 0, 0),
+		Size = UDim2.new(0, 34, 0, 34),
+		BackgroundColor3 = UiKit.Farben.PanelHell,
+		TextColor3 = UiKit.Farben.Text,
+		TextSize = 16,
+		Text = "X",
+	}, panel)
+
+	local inhalt = UiKit.Neu("Frame", {
+		Name = "Inhalt",
+		Position = UDim2.new(0, 0, 0, 48),
+		Size = UDim2.new(1, 0, 1, -48),
+		BackgroundTransparency = 1,
+	}, panel)
+
+	local fenster = {
+		Gui = gui,
+		Hintergrund = hintergrund,
+		Panel = panel,
+		Inhalt = inhalt,
+		Offen = false,
+		BeimOeffnen = nil :: (() -> ())?,
+	}
+
+	function fenster:SetzeOffen(neuerZustand: boolean)
+		self.Offen = neuerZustand
+		hintergrund.Visible = neuerZustand
+
+		if neuerZustand then
+			if self.BeimOeffnen then
+				self.BeimOeffnen()
+			end
+
+			-- Kleine Aufzieh-Animation
+			panel.Size = UDim2.new(0.92, 0, 0.8, 0)
+			game:GetService("TweenService"):Create(
+				panel,
+				TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+				{ Size = UDim2.new(0.92, 0, 0.88, 0) }
+			):Play()
+		end
+	end
+
+	function fenster:Umschalten()
+		self:SetzeOffen(not self.Offen)
+	end
+
+	schliessen.Activated:Connect(function()
+		fenster:SetzeOffen(false)
+	end)
+
+	-- Klick neben das Panel schliesst das Fenster
+	hintergrund.Activated:Connect(function()
+		fenster:SetzeOffen(false)
+	end)
+
+	return fenster
+end
+
+return UiKit.Neu("UIStroke", {
+		Color = farbe,
+		Thickness = dicke or 1,
+		Transparency = transparenz or 0.4,
+	}, eltern)
+end
+
+function UiKit.Abstand(eltern: Instance, pixel: number)
+	-- ================================================================
+-- FENSTER
+--
+-- Alle Menue-Fenster (Werft, Sternenkarte, Imperium) sehen gleich aus:
+-- abgedunkelter Hintergrund, Panel in der Mitte, Kopfzeile mit Titel
+-- und Schliessen-Kreuz. Diese Funktion baut genau das und gibt dir den
+-- leeren Inhaltsbereich zurueck.
+--
+-- Benutzung:
+--     local fenster = UiKit.Fenster({ Name = "MeinGui", Titel = "WERFT" })
+--     -- ... etwas in fenster.Inhalt bauen ...
+--     fenster:SetzeOffen(true)
+-- ================================================================
+function UiKit.Fenster(konfiguration: { [string]: any })
+	local spielerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+
+	local gui = UiKit.Neu("ScreenGui", {
+		Name = konfiguration.Name or "Fenster",
+		ResetOnSpawn = false,
+		DisplayOrder = konfiguration.Ebene or 5,
+		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+	}, spielerGui)
+
+	-- Bewusst ein TextButton und kein Frame: nur Knoepfe melden Klicks.
+	local hintergrund = UiKit.Neu("TextButton", {
+		Name = "Hintergrund",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+		BackgroundTransparency = 0.45,
+		BorderSizePixel = 0,
+		AutoButtonColor = false,
+		Text = "",
+		Visible = false,
+	}, gui)
+
+	local panel = UiKit.Neu("Frame", {
+		Name = "Panel",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.new(0.92, 0, 0.88, 0),
+		BackgroundColor3 = UiKit.Farben.Panel,
+		BorderSizePixel = 0,
+		-- Active = true laesst das Panel Klicks schlucken. Ohne das wuerde
+		-- ein Klick mitten ins Fenster den Hintergrund-Knopf darunter
+		-- ausloesen und das Fenster sofort wieder schliessen.
+		Active = true,
+	}, hintergrund)
+	UiKit.Ecken(panel, 14)
+	UiKit.Rand(panel, UiKit.Farben.PanelRand, 1.5, 0.45)
+	UiKit.Abstand(panel, 12)
+
+	UiKit.Neu("UISizeConstraint", {
+		MaxSize = konfiguration.MaxGroesse or Vector2.new(640, 560),
+		MinSize = Vector2.new(280, 320),
+	}, panel)
+
+	UiKit.Text({
+		Name = "Titel",
+		Size = UDim2.new(1, -44, 0, 26),
+		Font = Enum.Font.GothamBlack,
+		TextSize = 20,
+		Text = konfiguration.Titel or "",
+	}, panel)
+
+	UiKit.Text({
+		Name = "Untertitel",
+		Position = UDim2.new(0, 0, 0, 24),
+		Size = UDim2.new(1, -44, 0, 14),
+		TextSize = 11,
+		TextColor3 = UiKit.Farben.TextGedimmt,
+		Text = konfiguration.Untertitel or "",
+	}, panel)
+
+	local schliessen = UiKit.Knopf({
+		Name = "Schliessen",
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, 0, 0, 0),
+		Size = UDim2.new(0, 34, 0, 34),
+		BackgroundColor3 = UiKit.Farben.PanelHell,
+		TextColor3 = UiKit.Farben.Text,
+		TextSize = 16,
+		Text = "X",
+	}, panel)
+
+	local inhalt = UiKit.Neu("Frame", {
+		Name = "Inhalt",
+		Position = UDim2.new(0, 0, 0, 48),
+		Size = UDim2.new(1, 0, 1, -48),
+		BackgroundTransparency = 1,
+	}, panel)
+
+	local fenster = {
+		Gui = gui,
+		Hintergrund = hintergrund,
+		Panel = panel,
+		Inhalt = inhalt,
+		Offen = false,
+		BeimOeffnen = nil :: (() -> ())?,
+	}
+
+	function fenster:SetzeOffen(neuerZustand: boolean)
+		self.Offen = neuerZustand
+		hintergrund.Visible = neuerZustand
+
+		if neuerZustand then
+			if self.BeimOeffnen then
+				self.BeimOeffnen()
+			end
+
+			-- Kleine Aufzieh-Animation
+			panel.Size = UDim2.new(0.92, 0, 0.8, 0)
+			game:GetService("TweenService"):Create(
+				panel,
+				TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+				{ Size = UDim2.new(0.92, 0, 0.88, 0) }
+			):Play()
+		end
+	end
+
+	function fenster:Umschalten()
+		self:SetzeOffen(not self.Offen)
+	end
+
+	schliessen.Activated:Connect(function()
+		fenster:SetzeOffen(false)
+	end)
+
+	-- Klick neben das Panel schliesst das Fenster
+	hintergrund.Activated:Connect(function()
+		fenster:SetzeOffen(false)
+	end)
+
+	return fenster
+end
+
+return UiKit.Neu("UIPadding", {
+		PaddingTop = UDim.new(0, pixel),
+		PaddingBottom = UDim.new(0, pixel),
+		PaddingLeft = UDim.new(0, pixel),
+		PaddingRight = UDim.new(0, pixel),
+	}, eltern)
+end
+
+-- Standard-Textfeld mit unseren Schriftarten
+function UiKit.Text(eigenschaften: { [string]: any }, eltern: Instance?)
+	local standard = {
+		BackgroundTransparency = 1,
+		Font = Enum.Font.GothamMedium,
+		TextSize = 13,
+		TextColor3 = UiKit.Farben.Text,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	}
+	for schluessel, wert in eigenschaften do
+		standard[schluessel] = wert
+	end
+	-- ================================================================
+-- FENSTER
+--
+-- Alle Menue-Fenster (Werft, Sternenkarte, Imperium) sehen gleich aus:
+-- abgedunkelter Hintergrund, Panel in der Mitte, Kopfzeile mit Titel
+-- und Schliessen-Kreuz. Diese Funktion baut genau das und gibt dir den
+-- leeren Inhaltsbereich zurueck.
+--
+-- Benutzung:
+--     local fenster = UiKit.Fenster({ Name = "MeinGui", Titel = "WERFT" })
+--     -- ... etwas in fenster.Inhalt bauen ...
+--     fenster:SetzeOffen(true)
+-- ================================================================
+function UiKit.Fenster(konfiguration: { [string]: any })
+	local spielerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+
+	local gui = UiKit.Neu("ScreenGui", {
+		Name = konfiguration.Name or "Fenster",
+		ResetOnSpawn = false,
+		DisplayOrder = konfiguration.Ebene or 5,
+		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+	}, spielerGui)
+
+	-- Bewusst ein TextButton und kein Frame: nur Knoepfe melden Klicks.
+	local hintergrund = UiKit.Neu("TextButton", {
+		Name = "Hintergrund",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+		BackgroundTransparency = 0.45,
+		BorderSizePixel = 0,
+		AutoButtonColor = false,
+		Text = "",
+		Visible = false,
+	}, gui)
+
+	local panel = UiKit.Neu("Frame", {
+		Name = "Panel",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.new(0.92, 0, 0.88, 0),
+		BackgroundColor3 = UiKit.Farben.Panel,
+		BorderSizePixel = 0,
+		-- Active = true laesst das Panel Klicks schlucken. Ohne das wuerde
+		-- ein Klick mitten ins Fenster den Hintergrund-Knopf darunter
+		-- ausloesen und das Fenster sofort wieder schliessen.
+		Active = true,
+	}, hintergrund)
+	UiKit.Ecken(panel, 14)
+	UiKit.Rand(panel, UiKit.Farben.PanelRand, 1.5, 0.45)
+	UiKit.Abstand(panel, 12)
+
+	UiKit.Neu("UISizeConstraint", {
+		MaxSize = konfiguration.MaxGroesse or Vector2.new(640, 560),
+		MinSize = Vector2.new(280, 320),
+	}, panel)
+
+	UiKit.Text({
+		Name = "Titel",
+		Size = UDim2.new(1, -44, 0, 26),
+		Font = Enum.Font.GothamBlack,
+		TextSize = 20,
+		Text = konfiguration.Titel or "",
+	}, panel)
+
+	UiKit.Text({
+		Name = "Untertitel",
+		Position = UDim2.new(0, 0, 0, 24),
+		Size = UDim2.new(1, -44, 0, 14),
+		TextSize = 11,
+		TextColor3 = UiKit.Farben.TextGedimmt,
+		Text = konfiguration.Untertitel or "",
+	}, panel)
+
+	local schliessen = UiKit.Knopf({
+		Name = "Schliessen",
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, 0, 0, 0),
+		Size = UDim2.new(0, 34, 0, 34),
+		BackgroundColor3 = UiKit.Farben.PanelHell,
+		TextColor3 = UiKit.Farben.Text,
+		TextSize = 16,
+		Text = "X",
+	}, panel)
+
+	local inhalt = UiKit.Neu("Frame", {
+		Name = "Inhalt",
+		Position = UDim2.new(0, 0, 0, 48),
+		Size = UDim2.new(1, 0, 1, -48),
+		BackgroundTransparency = 1,
+	}, panel)
+
+	local fenster = {
+		Gui = gui,
+		Hintergrund = hintergrund,
+		Panel = panel,
+		Inhalt = inhalt,
+		Offen = false,
+		BeimOeffnen = nil :: (() -> ())?,
+	}
+
+	function fenster:SetzeOffen(neuerZustand: boolean)
+		self.Offen = neuerZustand
+		hintergrund.Visible = neuerZustand
+
+		if neuerZustand then
+			if self.BeimOeffnen then
+				self.BeimOeffnen()
+			end
+
+			-- Kleine Aufzieh-Animation
+			panel.Size = UDim2.new(0.92, 0, 0.8, 0)
+			game:GetService("TweenService"):Create(
+				panel,
+				TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+				{ Size = UDim2.new(0.92, 0, 0.88, 0) }
+			):Play()
+		end
+	end
+
+	function fenster:Umschalten()
+		self:SetzeOffen(not self.Offen)
+	end
+
+	schliessen.Activated:Connect(function()
+		fenster:SetzeOffen(false)
+	end)
+
+	-- Klick neben das Panel schliesst das Fenster
+	hintergrund.Activated:Connect(function()
+		fenster:SetzeOffen(false)
+	end)
+
+	return fenster
+end
+
+return UiKit.Neu("TextLabel", standard, eltern)
+end
+
+-- Standard-Knopf
+function UiKit.Knopf(eigenschaften: { [string]: any }, eltern: Instance?)
+	local standard = {
+		BackgroundColor3 = UiKit.Farben.Akzent,
+		BorderSizePixel = 0,
+		AutoButtonColor = true,
+		Font = Enum.Font.GothamBold,
+		TextSize = 13,
+		TextColor3 = Color3.fromRGB(8, 16, 24),
+	}
+	for schluessel, wert in eigenschaften do
+		standard[schluessel] = wert
+	end
+
+	local knopf = UiKit.Neu("TextButton", standard, eltern)
+	UiKit.Ecken(knopf, 8)
+	return knopf
+end
+
+-- ================================================================
+-- AKTIONSLEISTE
+--
+-- Sie sitzt am LINKEN Bildrand auf halber Hoehe. Bewusst nicht unten:
+-- Dort liegen auf dem Handy der Bewegungs-Stick (links unten) und der
+-- Sprungknopf (rechts unten).
+-- ================================================================
+local aktionsleisteCache: Frame? = nil
+
+function UiKit.HoleHud(): ScreenGui
+	local spielerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+	return spielerGui:WaitForChild("HUD", 30) :: ScreenGui
+end
+
+function UiKit.HoleAktionsleiste(): Frame
+	if aktionsleisteCache and aktionsleisteCache.Parent then
+		return aktionsleisteCache
+	end
+
+	local hud = UiKit.HoleHud()
+	aktionsleisteCache = hud:WaitForChild("Aktionsleiste", 30) :: Frame
+	return aktionsleisteCache :: Frame
+end
+
+-- Erzeugt die Leiste selbst. Wird EINMAL vom HudClient aufgerufen.
+function UiKit.ErstelleAktionsleiste(hud: ScreenGui): Frame
+	local leiste = UiKit.Neu("Frame", {
+		Name = "Aktionsleiste",
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.new(0, 12, 0.5, 0),
+		Size = UDim2.new(0, 120, 0, 240),
+		BackgroundTransparency = 1,
+	}, hud)
+
+	UiKit.Neu("UIListLayout", {
+		FillDirection = Enum.FillDirection.Vertical,
+		VerticalAlignment = Enum.VerticalAlignment.Center,
+		HorizontalAlignment = Enum.HorizontalAlignment.Left,
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		Padding = UDim.new(0, 8),
+	}, leiste)
+
+	aktionsleisteCache = leiste
+	return leiste
+end
+
+-- Haengt einen Knopf in die Leiste. Rueckgabe: der Knopf.
+function UiKit.LeistenKnopf(text: string, reihenfolge: number): TextButton
+	local leiste = UiKit.HoleAktionsleiste()
+
+	local knopf = UiKit.Knopf({
+		Name = text,
+		LayoutOrder = reihenfolge,
+		Size = UDim2.new(0, 116, 0, 42),
+		BackgroundColor3 = UiKit.Farben.Panel,
+		BackgroundTransparency = 0.12,
+		TextColor3 = UiKit.Farben.Text,
+		TextSize = 14,
+		Text = text,
+	}, leiste)
+
+	UiKit.Rand(knopf, UiKit.Farben.PanelRand, 1.5, 0.5)
+	return knopf
+end
+
+-- ================================================================
+-- FENSTER
+--
+-- Alle Menue-Fenster (Werft, Sternenkarte, Imperium) sehen gleich aus:
+-- abgedunkelter Hintergrund, Panel in der Mitte, Kopfzeile mit Titel
+-- und Schliessen-Kreuz. Diese Funktion baut genau das und gibt dir den
+-- leeren Inhaltsbereich zurueck.
+--
+-- Benutzung:
+--     local fenster = UiKit.Fenster({ Name = "MeinGui", Titel = "WERFT" })
+--     -- ... etwas in fenster.Inhalt bauen ...
+--     fenster:SetzeOffen(true)
+-- ================================================================
+function UiKit.Fenster(konfiguration: { [string]: any })
+	local spielerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+
+	local gui = UiKit.Neu("ScreenGui", {
+		Name = konfiguration.Name or "Fenster",
+		ResetOnSpawn = false,
+		DisplayOrder = konfiguration.Ebene or 5,
+		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+	}, spielerGui)
+
+	-- Bewusst ein TextButton und kein Frame: nur Knoepfe melden Klicks.
+	local hintergrund = UiKit.Neu("TextButton", {
+		Name = "Hintergrund",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+		BackgroundTransparency = 0.45,
+		BorderSizePixel = 0,
+		AutoButtonColor = false,
+		Text = "",
+		Visible = false,
+	}, gui)
+
+	local panel = UiKit.Neu("Frame", {
+		Name = "Panel",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.new(0.92, 0, 0.88, 0),
+		BackgroundColor3 = UiKit.Farben.Panel,
+		BorderSizePixel = 0,
+		-- Active = true laesst das Panel Klicks schlucken. Ohne das wuerde
+		-- ein Klick mitten ins Fenster den Hintergrund-Knopf darunter
+		-- ausloesen und das Fenster sofort wieder schliessen.
+		Active = true,
+	}, hintergrund)
+	UiKit.Ecken(panel, 14)
+	UiKit.Rand(panel, UiKit.Farben.PanelRand, 1.5, 0.45)
+	UiKit.Abstand(panel, 12)
+
+	UiKit.Neu("UISizeConstraint", {
+		MaxSize = konfiguration.MaxGroesse or Vector2.new(640, 560),
+		MinSize = Vector2.new(280, 320),
+	}, panel)
+
+	UiKit.Text({
+		Name = "Titel",
+		Size = UDim2.new(1, -44, 0, 26),
+		Font = Enum.Font.GothamBlack,
+		TextSize = 20,
+		Text = konfiguration.Titel or "",
+	}, panel)
+
+	UiKit.Text({
+		Name = "Untertitel",
+		Position = UDim2.new(0, 0, 0, 24),
+		Size = UDim2.new(1, -44, 0, 14),
+		TextSize = 11,
+		TextColor3 = UiKit.Farben.TextGedimmt,
+		Text = konfiguration.Untertitel or "",
+	}, panel)
+
+	local schliessen = UiKit.Knopf({
+		Name = "Schliessen",
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, 0, 0, 0),
+		Size = UDim2.new(0, 34, 0, 34),
+		BackgroundColor3 = UiKit.Farben.PanelHell,
+		TextColor3 = UiKit.Farben.Text,
+		TextSize = 16,
+		Text = "X",
+	}, panel)
+
+	local inhalt = UiKit.Neu("Frame", {
+		Name = "Inhalt",
+		Position = UDim2.new(0, 0, 0, 48),
+		Size = UDim2.new(1, 0, 1, -48),
+		BackgroundTransparency = 1,
+	}, panel)
+
+	local fenster = {
+		Gui = gui,
+		Hintergrund = hintergrund,
+		Panel = panel,
+		Inhalt = inhalt,
+		Offen = false,
+		BeimOeffnen = nil :: (() -> ())?,
+	}
+
+	function fenster:SetzeOffen(neuerZustand: boolean)
+		self.Offen = neuerZustand
+		hintergrund.Visible = neuerZustand
+
+		if neuerZustand then
+			if self.BeimOeffnen then
+				self.BeimOeffnen()
+			end
+
+			-- Kleine Aufzieh-Animation
+			panel.Size = UDim2.new(0.92, 0, 0.8, 0)
+			game:GetService("TweenService"):Create(
+				panel,
+				TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+				{ Size = UDim2.new(0.92, 0, 0.88, 0) }
+			):Play()
+		end
+	end
+
+	function fenster:Umschalten()
+		self:SetzeOffen(not self.Offen)
+	end
+
+	schliessen.Activated:Connect(function()
+		fenster:SetzeOffen(false)
+	end)
+
+	-- Klick neben das Panel schliesst das Fenster
+	hintergrund.Activated:Connect(function()
+		fenster:SetzeOffen(false)
+	end)
+
+	return fenster
+end
+
+return UiKit
+]]></ProtectedString>
+    </Properties>
+  </Item>
+  <Item class="ModuleScript" referent="RBX8">
+    <Properties>
+      <string name="Name">Util</string>
+      <ProtectedString name="Source"><![CDATA[--[[
+	Util  —  ModuleScript
+	================================================================
+	EXPLORER-ORT:  ReplicatedStorage > Util
+
+	WARUM HIER?
+	Kleine Helferfunktionen, die Server UND Client brauchen
+	(z. B. Zahlen huebsch formatieren). ReplicatedStorage ist der
+	gemeinsame Ordner fuer beide Seiten.
+	================================================================
+]]
+
+local Util = {}
+
+-- Wandelt 1234567 in "1.23M" um. Fuer die GUI und Button-Schilder.
+function Util.FormatGeld(zahl: number): string
+	zahl = math.floor(zahl)
+	if zahl < 1000 then
+		return tostring(zahl)
+	end
+
+	local einheiten = { "K", "M", "B", "T", "Qa", "Qi", "Sx" }
+	local index = 0
+	local wert = zahl
+
+	while wert >= 1000 and index < #einheiten do
+		wert = wert / 1000
+		index += 1
+	end
+
+	-- Bei dreistelligen Zahlen keine Nachkommastellen (z. B. "123M" statt "123.00M")
+	local nachkomma = (wert >= 100) and 0 or 2
+	return string.format("%." .. nachkomma .. "f%s", wert, einheiten[index])
+end
+
+-- Sekunden -> "02:35"
+function Util.FormatZeit(sekunden: number): string
+	sekunden = math.max(0, math.floor(sekunden))
+	return string.format("%02d:%02d", sekunden // 60, sekunden % 60)
+end
+
+-- Erzeugt schnell einen Part mit Standardeinstellungen fuer unsere Map.
+-- Anchored + CanCollide sind bewusst als Parameter gesetzt, damit wir
+-- nie vergessen, Bauteile zu verankern (unverankerte Parts = Lag).
+function Util.NeuerPart(eigenschaften: { [string]: any }): Part
+	local part = Instance.new("Part")
+	part.Anchored = true
+	part.CanCollide = true
+	part.CastShadow = false          -- spart Performance auf Handys
+	part.TopSurface = Enum.SurfaceType.Smooth
+	part.BottomSurface = Enum.SurfaceType.Smooth
+	part.Material = Enum.Material.SmoothPlastic
+
+	for schluessel, wert in eigenschaften do
+		(part :: any)[schluessel] = wert
+	end
+
+	return part
+end
+
+-- Rundet ab und stellt sicher, dass nie ein negativer Geldwert entsteht.
+function Util.SichererBetrag(zahl: any): number
+	if type(zahl) ~= "number" or zahl ~= zahl then  -- zahl ~= zahl faengt NaN ab
+		return 0
+	end
+	return math.max(0, math.floor(zahl))
+end
+
+-- Kopiert eine Tabelle tief. Brauchen wir fuer die Standard-Spielerdaten,
+-- damit nicht alle Spieler dieselbe Tabelle teilen.
+function Util.TiefeKopie(quelle: { [any]: any }): { [any]: any }
+	local ziel = {}
+	for schluessel, wert in quelle do
+		if type(wert) == "table" then
+			ziel[schluessel] = Util.TiefeKopie(wert)
+		else
+			ziel[schluessel] = wert
+		end
+	end
+	return ziel
+end
+
+return Util
+]]></ProtectedString>
+    </Properties>
+  </Item>
+</roblox>
