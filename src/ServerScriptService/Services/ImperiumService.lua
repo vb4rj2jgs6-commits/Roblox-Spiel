@@ -60,7 +60,10 @@ end
 -- ORBITALGESCHÜTZE (sichtbare Verteidigung auf dem Plot)
 -- ================================================================
 local function baueGeschuetz(plot: any, position: Vector3, nummer: number)
-	local basisPos = PlotService:ZuWelt(plot, position)
+	local function cf(versatz: Vector3, drehung: CFrame?): CFrame
+		local basis = CFrame.new(position + versatz)
+		return PlotService:ZuWeltCF(plot, drehung and basis * drehung or basis)
+	end
 
 	local model = Instance.new("Model")
 	model.Name = "Geschuetz" .. nummer
@@ -71,7 +74,7 @@ local function baueGeschuetz(plot: any, position: Vector3, nummer: number)
 		Size = Vector3.new(3, 8, 8),
 		Color = Color3.fromRGB(50, 56, 76),
 		Material = Enum.Material.Metal,
-		CFrame = CFrame.new(basisPos + Vector3.new(0, 1.5, 0)) * CFrame.Angles(0, 0, math.rad(90)),
+		CFrame = cf(Vector3.new(0, 1.5, 0), CFrame.Angles(0, 0, math.rad(90))),
 	})
 	sockel.Parent = model
 
@@ -83,7 +86,7 @@ local function baueGeschuetz(plot: any, position: Vector3, nummer: number)
 		CanCollide = false,
 		CanQuery = false,
 		CanTouch = false,
-		CFrame = CFrame.new(basisPos + Vector3.new(0, 4.8, 0)),
+		CFrame = cf(Vector3.new(0, 4.8, 0)),
 	})
 	turm.Parent = model
 	model.PrimaryPart = turm
@@ -96,7 +99,7 @@ local function baueGeschuetz(plot: any, position: Vector3, nummer: number)
 		CanCollide = false,
 		CanQuery = false,
 		CanTouch = false,
-		CFrame = CFrame.new(basisPos + Vector3.new(0, 5.6, -3.5)) * CFrame.Angles(math.rad(-25), 0, 0),
+		CFrame = cf(Vector3.new(0, 5.6, -3.5), CFrame.Angles(math.rad(-25), 0, 0)),
 	})
 	lauf.Parent = model
 
@@ -108,7 +111,7 @@ local function baueGeschuetz(plot: any, position: Vector3, nummer: number)
 		CanCollide = false,
 		CanQuery = false,
 		CanTouch = false,
-		CFrame = CFrame.new(basisPos + Vector3.new(0, 7.4, -7.3)),
+		CFrame = cf(Vector3.new(0, 7.4, -7.3)),
 	})
 	spitze.Parent = model
 
@@ -332,7 +335,12 @@ function ImperiumService:Init()
 					if turm and turm:IsA("BasePart") then
 						local lauf = geschuetz:FindFirstChild("Lauf")
 						local spitze = geschuetz:FindFirstChild("Spitze")
-						local drehung = CFrame.new(turm.Position) * CFrame.Angles(0, winkel, 0)
+						-- plot.Ursprung.Rotation bringt die Drehung der Station
+						-- mit ein. Ohne sie schwenkten die Laeufe um eine feste
+						-- Weltachse und staenden quer zum Turm.
+						local drehung = CFrame.new(turm.Position)
+							* plot.Ursprung.Rotation
+							* CFrame.Angles(0, winkel, 0)
 
 						if lauf and lauf:IsA("BasePart") then
 							lauf.CFrame = drehung

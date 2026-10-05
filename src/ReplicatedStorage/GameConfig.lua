@@ -52,13 +52,101 @@ Config.Speicher = {
 Config.Plot = {
 	Anzahl = 6,                                  -- Wie viele Spieler gleichzeitig
 	Groesse = Vector3.new(120, 4, 120),          -- Breite x Dicke x Tiefe
-	Abstand = 200,                               -- Abstand der Plot-Mittelpunkte
-	ProReihe = 3,                                -- Plots werden im Raster angeordnet
 	Hoehe = 0,                                   -- Y-Position der Plot-Oberflaeche
 
+	-- ANORDNUNG: "Ring" oder "Raster"
+	--   Ring   = Die Stationen liegen im Kreis um die Zentralstation herum und
+	--            sind ueber Steg-Bruecken mit ihr verbunden. Sieht deutlich
+	--            besser aus und macht die Karte zu einem echten Ort.
+	--   Raster = Die alte, schlichte Gitter-Anordnung (3 pro Reihe).
+	Anordnung = "Ring",
+	RingRadius = 250,                            -- Abstand vom Zentrum
+	Abstand = 200,                               -- nur fuer "Raster"
+	ProReihe = 3,                                -- nur fuer "Raster"
+
 	BodenFarbe   = Color3.fromRGB(38, 42, 58),
+	DeckFarbe    = Color3.fromRGB(48, 54, 74),   -- Bodenplatten obenauf
+	ZonenFarbe   = Color3.fromRGB(30, 34, 48),   -- Markierung der Arbeitszonen
+	StrebenFarbe = Color3.fromRGB(42, 47, 64),   -- Unterbau
 	RandFarbe    = Color3.fromRGB(0, 190, 255),  -- Neon-Kante (Weltraum-Look)
 	FreiFarbe    = Color3.fromRGB(120, 120, 130),-- Schildfarbe, wenn Plot frei ist
+
+	BrueckeBreite = 16,                          -- Steg zur Zentralstation
+}
+
+-- ================================================================
+-- WELT / KARTEN-DEKORATION
+--
+-- Alles hier ist reine Optik und kostet kaum Leistung: Die Teile sind
+-- verankert, werfen keine Schatten und sind nicht anklickbar. Wenn dein
+-- Spiel auf alten Handys ruckelt, sind das die ersten Werte, die du
+-- senken kannst.
+-- ================================================================
+Config.Welt = {
+	Zentralstation = {
+		Aktiv = true,
+		Radius = 90,            -- Aussenradius der Ringplattform
+		Hoehe = 0,              -- gleiche Ebene wie die Plots
+		Dockarme = true,        -- Arme in Richtung der Stationen
+	},
+
+	Asteroidenguertel = {
+		Anzahl = 54,
+		InnenRadius = 900,
+		AussenRadius = 1500,
+		HoehenStreuung = 160,
+		MinGroesse = 14,
+		MaxGroesse = 55,
+	},
+
+	-- NOCH NICHT GEBAUT (siehe docs/UEBERGABE.md, Aufgabe 1).
+	-- Die Werte stehen hier schon bereit, liest aber noch niemand.
+	Nebelwolken = {
+		Anzahl = 10,
+		MinRadius = 1100,
+		MaxRadius = 2200,
+		MinGroesse = 420,
+		MaxGroesse = 900,
+		Farben = {
+			Color3.fromRGB(70, 40, 120),
+			Color3.fromRGB(20, 60, 120),
+			Color3.fromRGB(110, 35, 80),
+			Color3.fromRGB(25, 85, 110),
+		},
+	},
+
+	-- NOCH NICHT GEBAUT (siehe docs/UEBERGABE.md, Aufgabe 1).
+	-- Die Werte stehen hier schon bereit, liest aber noch niemand.
+	Gasriese = {
+		Aktiv = true,
+		Position = Vector3.new(-2600, 700, -2100),
+		Radius = 520,
+		Farbe = Color3.fromRGB(190, 140, 95),
+		RingFarbe = Color3.fromRGB(225, 195, 150),
+	},
+
+	Zentralstern = {
+		Position = Vector3.new(1800, 1100, -2900),
+		Radius = 240,
+		Farbe = Color3.fromRGB(255, 196, 130),
+	},
+
+	-- NOCH NICHT GEBAUT (siehe docs/UEBERGABE.md, Aufgabe 1).
+	-- Die Werte stehen hier schon bereit, liest aber noch niemand.
+	Wrack = {
+		Aktiv = true,
+		Position = Vector3.new(620, 150, 680),
+	},
+
+	-- NOCH NICHT GEBAUT (siehe docs/UEBERGABE.md, Aufgabe 1).
+	-- Die Werte stehen hier schon bereit, liest aber noch niemand.
+	Komet = {
+		Aktiv = true,
+		Radius = 1700,       -- Flugbahn um das Zentrum
+		Hoehe = 480,
+		Dauer = 150,         -- Sekunden fuer eine Runde
+		Schweiflaenge = 14,  -- Anzahl der Schweif-Teile
+	},
 }
 
 -- ================================================================

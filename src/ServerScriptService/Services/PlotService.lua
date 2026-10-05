@@ -70,17 +70,50 @@ function PlotService:ZuWelt(plot: any, lokal: Vector3): Vector3
 	return plot.Ursprung:PointToWorldSpace(lokal)
 end
 
-local function rasterPosition(index: number): Vector3
+-- Wie ZuWelt, aber fuer ganze CFrames — also MIT Drehung.
+-- Das ist der wichtigere der beiden Helfer: Weil die Stationen im Ring
+-- stehen, ist jede anders gedreht. Wer nur die Position umrechnet und
+-- CFrame.new(position) benutzt, baut eckige Teile schief zur Plattform.
+--
+-- REGEL: Alles, was eine erkennbare Vorderseite oder rechte Winkel hat,
+-- wird mit ZuWeltCF gesetzt. Nur Kugeln und zufaellig gedrehtes Zeug
+-- duerfen ZuWelt benutzen.
+function PlotService:ZuWeltCF(plot: any, lokal: CFrame): CFrame
+	return plot.Ursprung * lokal
+end
+
+-- Ursprung (Position + Drehung) der Station Nummer `index`.
+local function plotUrsprung(index: number): CFrame
+	local hoehe = Config.Plot.Hoehe
+
+	if Config.Plot.Anordnung == "Ring" then
+		local winkel = (index - 1) / Config.Plot.Anzahl * math.pi * 2
+		local radius = Config.Plot.RingRadius
+		local zentrum = Vector3.new(
+			math.cos(winkel) * radius,
+			hoehe,
+			math.sin(winkel) * radius
+		)
+
+		-- Die Station soll zur Zentralstation "schauen": Wir richten sie
+		-- vom Mittelpunkt WEG aus. CFrame.lookAt legt die LookVector
+		-- (also -Z) auf das Ziel — damit zeigt +Z nach innen, und die
+		-- lokale Koordinate z = +48 (der Spawn) liegt auf der Innenseite.
+		local wegVomZentrum = (zentrum - Vector3.new(0, hoehe, 0)).Unit
+		return CFrame.lookAt(zentrum, zentrum + wegVomZentrum)
+	end
+
+	-- Anordnung "Raster": schlichtes Gitter, alle gleich gedreht
 	local proReihe = Config.Plot.ProReihe
 	local reihen = math.ceil(Config.Plot.Anzahl / proReihe)
-
 	local spalte = (index - 1) % proReihe
 	local reihe = (index - 1) // proReihe
 
-	local x = (spalte - (proReihe - 1) / 2) * Config.Plot.Abstand
-	local z = (reihe - (reihen - 1) / 2) * Config.Plot.Abstand
-
-	return Vector3.new(x, Config.Plot.Hoehe, z)
+	return CFrame.new(
+		(spalte - (proReihe - 1) / 2) * Config.Plot.Abstand,
+		hoehe,
+		(reihe - (reihen - 1) / 2) * Config.Plot.Abstand
+	)
 end
 
 -- ================================================================
@@ -91,25 +124,69 @@ local function baueRahmen(plot: any)
 	local halbeBreite = groesse.X / 2
 	local halbeTiefe = groesse.Z / 2
 
-	-- Boden. Die Oberflaeche liegt genau auf Config.Plot.Hoehe.
+	-- ---------- Hauptdeck ----------
+	-- Die Oberflaeche liegt genau auf Config.Plot.Hoehe, damit alles
+	-- andere mit y = 0 rechnen kann.
 	local boden = Util.NeuerPart({
 		Name = "Basis",
 		Size = groesse,
 		Color = Config.Plot.BodenFarbe,
 		Material = Enum.Material.Metal,
-		CFrame = CFrame.new(plot.Zentrum - Vector3.new(0, groesse.Y / 2, 0)),
+		CFrame = PlotService:ZuWeltCF(plot, CFrame.new(0, -groesse.Y / 2, 0)),
 	})
 	boden.Parent = plot.Model
 	plot.Model.PrimaryPart = boden
 
-	-- Vier Neon-Kanten als Weltraum-Akzent
+	-- ---------- Bodenplatten ----------
+	-- Ein durchgehendes Rechteck sieht aus wie ein Platzhalter. Vier
+	-- etwas hellere Platten mit Fugen dazwischen lassen die Station
+	-- sofort nach gebautem Deck aussehen — vier Teile fuer viel Wirkung.
+	for x = -1, 1, 2 do
+		for z = -1, 1, 2 do
+			local platte = Util.NeuerPart({
+				Name = "Deckplatte",
+				Size = Vector3.new(halbeBreite - 4, 0.4, halbeTiefe - 4),
+				Color = Config.Plot.DeckFarbe,
+				Material = Enum.Material.Metal,
+				CanQuery = false,
+				CanTouch = false,
+				CFrame = PlotService:ZuWeltCF(
+					plot,
+					CFrame.new(x * (halbeBreite / 2 + 1), 0.2, z * (halbeTiefe / 2 + 1))
+				),
+			})
+			platte.Parent = plot.Model
+		end
+	end
+
+	-- ---------- Arbeitszonen ----------
+	-- Dunkle Streifen unter den Bauplaetzen. Sie fuehren das Auge und
+	-- machen klar: links wird produziert, rechts aufgeruestet.
+	local zonen = {
+		{ Size = Vector3.new(26, 0.2, 108), Offset = Vector3.new(-40, 0.45, 0) },
+		{ Size = Vector3.new(26, 0.2, 90), Offset = Vector3.new(40, 0.45, 0) },
+		{ Size = Vector3.new(70, 0.2, 22), Offset = Vector3.new(0, 0.45, -34) },
+	}
+	for i, zone in zonen do
+		local part = Util.NeuerPart({
+			Name = "Zone" .. i,
+			Size = zone.Size,
+			Color = Config.Plot.ZonenFarbe,
+			Material = Enum.Material.Metal,
+			CanQuery = false,
+			CanTouch = false,
+			CFrame = PlotService:ZuWeltCF(plot, CFrame.new(zone.Offset)),
+		})
+		part.Parent = plot.Model
+	end
+
+	-- ---------- Neon-Kanten ----------
 	local kanten = {
 		{ Size = Vector3.new(groesse.X, 0.6, 2), Offset = Vector3.new(0, 0.3, halbeTiefe) },
 		{ Size = Vector3.new(groesse.X, 0.6, 2), Offset = Vector3.new(0, 0.3, -halbeTiefe) },
 		{ Size = Vector3.new(2, 0.6, groesse.Z), Offset = Vector3.new(halbeBreite, 0.3, 0) },
 		{ Size = Vector3.new(2, 0.6, groesse.Z), Offset = Vector3.new(-halbeBreite, 0.3, 0) },
 	}
-
 	for i, kante in kanten do
 		local part = Util.NeuerPart({
 			Name = "Kante" .. i,
@@ -119,9 +196,147 @@ local function baueRahmen(plot: any)
 			CanCollide = false,
 			CanQuery = false,
 			CanTouch = false,
-			CFrame = CFrame.new(plot.Zentrum + kante.Offset),
+			CFrame = PlotService:ZuWeltCF(plot, CFrame.new(kante.Offset)),
 		})
 		part.Parent = plot.Model
+	end
+
+	-- ---------- Unterbau ----------
+	-- Eine schwebende Platte sieht nach nichts aus. Vier Streben nach
+	-- unten und ein leuchtender Reaktorkern darunter geben ihr Masse —
+	-- und man sieht es von jedem Nachbar-Plot aus.
+	for _, ecke in { Vector2.new(1, 1), Vector2.new(1, -1), Vector2.new(-1, 1), Vector2.new(-1, -1) } do
+		local strebe = Util.NeuerPart({
+			Name = "Strebe",
+			Size = Vector3.new(9, 34, 9),
+			Color = Config.Plot.StrebenFarbe,
+			Material = Enum.Material.Metal,
+			CanCollide = false,
+			CanQuery = false,
+			CanTouch = false,
+			CFrame = PlotService:ZuWeltCF(
+				plot,
+				CFrame.new(ecke.X * (halbeBreite - 14), -19, ecke.Y * (halbeTiefe - 14))
+					* CFrame.Angles(math.rad(ecke.Y * 6), 0, math.rad(-ecke.X * 6))
+			),
+		})
+		strebe.Parent = plot.Model
+	end
+
+	local reaktor = Util.NeuerPart({
+		Name = "Reaktorkern",
+		Shape = Enum.PartType.Ball,
+		Size = Vector3.new(30, 30, 30),
+		Color = Config.Plot.RandFarbe,
+		Material = Enum.Material.Neon,
+		Transparency = 0.35,
+		CanCollide = false,
+		CanQuery = false,
+		CanTouch = false,
+		CFrame = PlotService:ZuWeltCF(plot, CFrame.new(0, -34, 0)),
+	})
+	reaktor.Parent = plot.Model
+
+	local reaktorLicht = Instance.new("PointLight")
+	reaktorLicht.Brightness = 2
+	reaktorLicht.Range = 60
+	reaktorLicht.Color = Config.Plot.RandFarbe
+	reaktorLicht.Parent = reaktor
+end
+
+-- Blinkende Positionslichter an den vier Ecken. Mobilfreundlich:
+-- Die Teile sind verankert, nur die Transparenz wird animiert.
+local function baueBaken(plot: any)
+	local groesse = Config.Plot.Groesse
+	local ecken = {
+		Vector2.new(1, 1), Vector2.new(1, -1),
+		Vector2.new(-1, 1), Vector2.new(-1, -1),
+	}
+
+	plot.Baken = {}
+
+	for i, ecke in ecken do
+		local mast = Util.NeuerPart({
+			Name = "Bakenmast",
+			Size = Vector3.new(1.4, 9, 1.4),
+			Color = Config.Plot.StrebenFarbe,
+			Material = Enum.Material.Metal,
+			CanCollide = false,
+			CanQuery = false,
+			CanTouch = false,
+			CFrame = PlotService:ZuWeltCF(
+				plot,
+				CFrame.new(ecke.X * (groesse.X / 2 - 4), 4.5, ecke.Y * (groesse.Z / 2 - 4))
+			),
+		})
+		mast.Parent = plot.Model
+
+		local lampe = Util.NeuerPart({
+			Name = "Bake" .. i,
+			Shape = Enum.PartType.Ball,
+			Size = Vector3.new(3, 3, 3),
+			Color = Color3.fromRGB(255, 120, 110),
+			Material = Enum.Material.Neon,
+			CanCollide = false,
+			CanQuery = false,
+			CanTouch = false,
+			CFrame = PlotService:ZuWeltCF(
+				plot,
+				CFrame.new(ecke.X * (groesse.X / 2 - 4), 10, ecke.Y * (groesse.Z / 2 - 4))
+			),
+		})
+		lampe.Parent = plot.Model
+		table.insert(plot.Baken, lampe)
+	end
+end
+
+-- Steg zur Zentralstation. Nur im Ring-Modus — im Raster gibt es kein
+-- Zentrum, zu dem er fuehren koennte.
+local function baueBruecke(plot: any)
+	if Config.Plot.Anordnung ~= "Ring" or not Config.Welt.Zentralstation.Aktiv then
+		return
+	end
+
+	local halbeTiefe = Config.Plot.Groesse.Z / 2
+	local innenKante = Config.Plot.RingRadius - halbeTiefe
+	local stationsRand = Config.Welt.Zentralstation.Radius
+	local laenge = innenKante - stationsRand
+
+	if laenge <= 8 then
+		return
+	end
+
+	-- Der Steg liegt auf der Innenseite (lokal +Z zeigt zum Zentrum).
+	local mitte = halbeTiefe + laenge / 2
+	local breite = Config.Plot.BrueckeBreite
+
+	local steg = Util.NeuerPart({
+		Name = "Bruecke",
+		Size = Vector3.new(breite, 1.2, laenge),
+		Color = Config.Plot.DeckFarbe,
+		Material = Enum.Material.Metal,
+		CFrame = PlotService:ZuWeltCF(plot, CFrame.new(0, -0.6, mitte)),
+	})
+	steg.Parent = plot.Model
+
+	-- Zwei Leuchtstreifen als Geländer-Ersatz. Sie sind nicht begehbar
+	-- und nicht kollidierend — man kann also runterfallen, das gehoert
+	-- bei einer Raumstation dazu.
+	for _, seite in { -1, 1 } do
+		local streifen = Util.NeuerPart({
+			Name = "Brueckenkante",
+			Size = Vector3.new(1.2, 1.6, laenge),
+			Color = Config.Plot.RandFarbe,
+			Material = Enum.Material.Neon,
+			CanCollide = false,
+			CanQuery = false,
+			CanTouch = false,
+			CFrame = PlotService:ZuWeltCF(
+				plot,
+				CFrame.new(seite * (breite / 2 - 0.6), 0.2, mitte)
+			),
+		})
+		streifen.Parent = plot.Model
 	end
 end
 
@@ -131,7 +346,7 @@ local function baueSchild(plot: any)
 		Size = Vector3.new(3, 14, 3),
 		Color = Color3.fromRGB(60, 65, 85),
 		Material = Enum.Material.Metal,
-		CFrame = CFrame.new(PlotService:ZuWelt(plot, Vector3.new(0, 7, 56))),
+		CFrame = PlotService:ZuWeltCF(plot, CFrame.new(0, 7, -56)),
 	})
 	saeule.Parent = plot.Model
 
@@ -162,14 +377,15 @@ local function baueSammelkern(plot: any)
 	kernOrdner.Name = "Sammelkern"
 	kernOrdner.Parent = plot.Model
 
-	local basisPos = PlotService:ZuWelt(plot, Config.PlotPunkte.Sammelkern)
+	local lokal = Config.PlotPunkte.Sammelkern
+	local basisPos = PlotService:ZuWelt(plot, lokal)
 
 	local pad = Util.NeuerPart({
 		Name = "Pad",
 		Size = Vector3.new(26, 1, 26),
 		Color = Color3.fromRGB(28, 32, 48),
 		Material = Enum.Material.Metal,
-		CFrame = CFrame.new(basisPos + Vector3.new(0, 0.5, 0)),
+		CFrame = PlotService:ZuWeltCF(plot, CFrame.new(lokal + Vector3.new(0, 0.5, 0))),
 	})
 	pad.Parent = kernOrdner
 
@@ -181,9 +397,30 @@ local function baueSammelkern(plot: any)
 		CanCollide = false,
 		CanQuery = false,
 		CanTouch = false,
-		CFrame = CFrame.new(basisPos + Vector3.new(0, 1.2, 0)),
+		CFrame = PlotService:ZuWeltCF(plot, CFrame.new(lokal + Vector3.new(0, 1.2, 0))),
 	})
 	ring.Parent = kernOrdner
+
+	-- Drei Traegerboegen um den Kern. Sie machen aus dem flachen Pad eine
+	-- Anlage und rahmen den schwebenden Kristall ein.
+	for i = 1, 3 do
+		local winkel = (i - 1) / 3 * math.pi * 2
+		local bogen = Util.NeuerPart({
+			Name = "Traeger" .. i,
+			Size = Vector3.new(2, 15, 2),
+			Color = Config.Plot.StrebenFarbe,
+			Material = Enum.Material.Metal,
+			CanCollide = false,
+			CanQuery = false,
+			CanTouch = false,
+			CFrame = PlotService:ZuWeltCF(
+				plot,
+				CFrame.new(lokal + Vector3.new(math.cos(winkel) * 9, 7, math.sin(winkel) * 9))
+					* CFrame.Angles(math.rad(math.sin(winkel) * 18), 0, math.rad(-math.cos(winkel) * 18))
+			),
+		})
+		bogen.Parent = kernOrdner
+	end
 
 	-- Der schwebende Kristall, auf den die Lieferungen zufliegen
 	local kern = Util.NeuerPart({
@@ -245,7 +482,14 @@ end
 -- Sie ist nicht kaufbar, sondern von Anfang an da — sonst haette der
 -- Spieler keinen Zugang zum Flotten-System.
 local function baueWerft(plot: any)
-	local basisPos = PlotService:ZuWelt(plot, Config.PlotPunkte.Werft)
+	local lokal = Config.PlotPunkte.Werft
+
+	-- Kurzschreibweise: wandelt einen lokalen Versatz zur Werft in einen
+	-- Welt-CFrame um — inklusive der Drehung der Station.
+	local function cf(versatz: Vector3, drehung: CFrame?): CFrame
+		local basis = CFrame.new(lokal + versatz)
+		return PlotService:ZuWeltCF(plot, drehung and basis * drehung or basis)
+	end
 
 	local model = Instance.new("Model")
 	model.Name = "Werft"
@@ -256,7 +500,7 @@ local function baueWerft(plot: any)
 		Size = Vector3.new(18, 2, 18),
 		Color = Color3.fromRGB(44, 50, 70),
 		Material = Enum.Material.Metal,
-		CFrame = CFrame.new(basisPos + Vector3.new(0, 1, 0)),
+		CFrame = cf(Vector3.new(0, 1, 0)),
 	})
 	plattform.Parent = model
 
@@ -270,7 +514,7 @@ local function baueWerft(plot: any)
 			CanCollide = false,
 			CanQuery = false,
 			CanTouch = false,
-			CFrame = CFrame.new(basisPos + Vector3.new(seite * 7, 10, 0)),
+			CFrame = cf(Vector3.new(seite * 7, 10, 0)),
 		})
 		strebe.Parent = model
 	end
@@ -283,7 +527,7 @@ local function baueWerft(plot: any)
 		CanCollide = false,
 		CanQuery = false,
 		CanTouch = false,
-		CFrame = CFrame.new(basisPos + Vector3.new(0, 18, 0)),
+		CFrame = cf(Vector3.new(0, 18, 0)),
 	})
 	bogen.Parent = model
 
@@ -293,8 +537,7 @@ local function baueWerft(plot: any)
 		Size = Vector3.new(5, 4, 2.4),
 		Color = Color3.fromRGB(30, 36, 52),
 		Material = Enum.Material.Metal,
-		CFrame = CFrame.new(basisPos + Vector3.new(0, 4, 6))
-			* CFrame.Angles(math.rad(-18), 0, 0),
+		CFrame = cf(Vector3.new(0, 4, 6), CFrame.Angles(math.rad(-18), 0, 0)),
 	})
 	konsole.Parent = model
 
@@ -345,14 +588,17 @@ local function baueSpawnPad(plot: any)
 		CanCollide = false,
 		CanQuery = false,
 		CanTouch = false,
-		CFrame = CFrame.new(PlotService:ZuWelt(plot, Config.PlotPunkte.Spawn) + Vector3.new(0, 0.3, 0)),
+		CFrame = PlotService:ZuWeltCF(
+			plot,
+			CFrame.new(Config.PlotPunkte.Spawn + Vector3.new(0, 0.3, 0))
+		),
 	})
 	pad.Parent = plot.Model
 	plot.SpawnPad = pad
 end
 
 function PlotService:PlotErstellen(index: number)
-	local zentrum = rasterPosition(index)
+	local ursprung = plotUrsprung(index)
 
 	local model = Instance.new("Model")
 	model.Name = "Plot" .. index
@@ -360,8 +606,8 @@ function PlotService:PlotErstellen(index: number)
 	local plot = {
 		Index = index,
 		Model = model,
-		Zentrum = zentrum,
-		Ursprung = CFrame.new(zentrum),
+		Zentrum = ursprung.Position,
+		Ursprung = ursprung,
 		Besitzer = nil :: Player?,
 
 		-- Laufzeitwerte, werden von NeuBerechnen gesetzt
@@ -371,6 +617,8 @@ function PlotService:PlotErstellen(index: number)
 	}
 
 	baueRahmen(plot)
+	baueBaken(plot)
+	baueBruecke(plot)
 	baueSchild(plot)
 	baueSammelkern(plot)
 	baueSpawnPad(plot)
@@ -401,7 +649,10 @@ end
 -- ================================================================
 local function baueDropper(plot: any, eintrag: any)
 	local typ = Config.DropperTypen[eintrag.DropperTyp]
-	local basisPos = PlotService:ZuWelt(plot, eintrag.Position)
+
+	local function cf(versatz: Vector3): CFrame
+		return PlotService:ZuWeltCF(plot, CFrame.new(eintrag.Position + versatz))
+	end
 
 	local model = Instance.new("Model")
 	model.Name = eintrag.Id
@@ -412,7 +663,7 @@ local function baueDropper(plot: any, eintrag: any)
 		Size = Vector3.new(10, 6, 10),
 		Color = Color3.fromRGB(52, 58, 78),
 		Material = Enum.Material.Metal,
-		CFrame = CFrame.new(basisPos + Vector3.new(0, 3, 0)),
+		CFrame = cf(Vector3.new(0, 3, 0)),
 	})
 	sockel.Parent = model
 
@@ -421,7 +672,7 @@ local function baueDropper(plot: any, eintrag: any)
 		Size = Vector3.new(5, 8, 5),
 		Color = Color3.fromRGB(70, 78, 102),
 		Material = Enum.Material.Metal,
-		CFrame = CFrame.new(basisPos + Vector3.new(0, 10, 0)),
+		CFrame = cf(Vector3.new(0, 10, 0)),
 	})
 	turm.Parent = model
 
@@ -433,7 +684,7 @@ local function baueDropper(plot: any, eintrag: any)
 		CanCollide = false,
 		CanQuery = false,
 		CanTouch = false,
-		CFrame = CFrame.new(basisPos + Vector3.new(0, 14.5, 0)),
+		CFrame = cf(Vector3.new(0, 14.5, 0)),
 	})
 	duese.Parent = model
 
@@ -466,7 +717,10 @@ local function baueDropper(plot: any, eintrag: any)
 end
 
 local function baueModul(plot: any, eintrag: any, farbe: Color3, beschriftung: string)
-	local basisPos = PlotService:ZuWelt(plot, eintrag.Position)
+	local function cf(versatz: Vector3, drehung: CFrame?): CFrame
+		local basis = CFrame.new(eintrag.Position + versatz)
+		return PlotService:ZuWeltCF(plot, drehung and basis * drehung or basis)
+	end
 
 	local model = Instance.new("Model")
 	model.Name = eintrag.Id
@@ -477,7 +731,7 @@ local function baueModul(plot: any, eintrag: any, farbe: Color3, beschriftung: s
 		Size = Vector3.new(11, 5, 11),
 		Color = Color3.fromRGB(48, 54, 74),
 		Material = Enum.Material.Metal,
-		CFrame = CFrame.new(basisPos + Vector3.new(0, 2.5, 0)),
+		CFrame = cf(Vector3.new(0, 2.5, 0)),
 	})
 	sockel.Parent = model
 
@@ -489,7 +743,7 @@ local function baueModul(plot: any, eintrag: any, farbe: Color3, beschriftung: s
 		CanCollide = false,
 		CanQuery = false,
 		CanTouch = false,
-		CFrame = CFrame.new(basisPos + Vector3.new(0, 8.5, 0)) * CFrame.Angles(0, math.rad(45), 0),
+		CFrame = cf(Vector3.new(0, 8.5, 0), CFrame.Angles(0, math.rad(45), 0)),
 	})
 	kristall.Parent = model
 
@@ -679,8 +933,14 @@ function PlotService:ZumPlotTeleportieren(spieler: Player)
 		return
 	end
 
-	local ziel = self:ZuWelt(plot, Config.PlotPunkte.Spawn) + Vector3.new(0, 5, 0)
-	charakter:PivotTo(CFrame.new(ziel, ziel + Vector3.new(0, 0, -1)))
+	-- Blickrichtung aus der Drehung der Station ableiten: Der Spieler soll
+	-- auf seine Anlage schauen (lokal -Z), nicht in eine feste Weltrichtung.
+	-- Mit der Ring-Anordnung ist jede Station anders gedreht.
+	local ziel = self:ZuWeltCF(
+		plot,
+		CFrame.new(Config.PlotPunkte.Spawn + Vector3.new(0, 5, 0))
+	)
+	charakter:PivotTo(CFrame.lookAt(ziel.Position, ziel.Position + ziel.LookVector))
 end
 
 -- ================================================================
@@ -742,10 +1002,20 @@ function PlotService:Init(welt: Folder)
 				letzteTextaktualisierung = jetzt
 			end
 
+			-- Positionslichter blinken im Takt. Ein Wert fuer alle Baken,
+			-- damit die Stationen synchron pulsieren.
+			local bakenTransparenz = (math.sin(jetzt * 2.2) > 0) and 0 or 0.75
+
 			for _, plot in self.Plots do
 				local basis = self:ZuWelt(plot, Config.PlotPunkte.Sammelkern)
 				plot.Kern.CFrame = CFrame.new(basis + Vector3.new(0, 8 + math.sin(jetzt * 1.5) * 0.8, 0))
 					* CFrame.Angles(0, jetzt * 0.8, 0)
+
+				if plot.Baken then
+					for _, bake in plot.Baken do
+						bake.Transparency = bakenTransparenz
+					end
+				end
 
 				if textUpdate and plot.Besitzer then
 					local daten = DataService:Get(plot.Besitzer)

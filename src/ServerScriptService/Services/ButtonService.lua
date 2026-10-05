@@ -42,7 +42,12 @@ local FARBE_GRATIS = Color3.fromRGB(90, 200, 255)
 local letzteBeruehrung: { [string]: number } = {}
 
 local function baueButton(plot: any, eintrag: any)
-	local basisPos = PlotService:ZuWelt(plot, eintrag.ButtonPos)
+	-- ZuWeltCF statt ZuWelt: Die Stationen stehen im Ring und sind darum
+	-- unterschiedlich gedreht. Ohne die Drehung staenden die eckigen Pads
+	-- schief auf der Plattform.
+	local function cf(versatz: Vector3): CFrame
+		return PlotService:ZuWeltCF(plot, CFrame.new(eintrag.ButtonPos + versatz))
+	end
 
 	local model = Instance.new("Model")
 	model.Name = eintrag.Id
@@ -53,7 +58,7 @@ local function baueButton(plot: any, eintrag: any)
 		Size = Vector3.new(9, 1, 9),
 		Color = Color3.fromRGB(35, 40, 56),
 		Material = Enum.Material.Metal,
-		CFrame = CFrame.new(basisPos + Vector3.new(0, 0.5, 0)),
+		CFrame = cf(Vector3.new(0, 0.5, 0)),
 	})
 	sockel.Parent = model
 
@@ -67,7 +72,7 @@ local function baueButton(plot: any, eintrag: any)
 		-- Touched feuert trotzdem. Das verhindert, dass die Schwebe-
 		-- Animation die Spielfigur anhebt oder wegschiebt.
 		CanCollide = false,
-		CFrame = CFrame.new(basisPos + Vector3.new(0, 1.2, 0)),
+		CFrame = cf(Vector3.new(0, 1.2, 0)),
 	})
 	pad.Parent = model
 	model.PrimaryPart = pad

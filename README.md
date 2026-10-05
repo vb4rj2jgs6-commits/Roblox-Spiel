@@ -22,6 +22,7 @@ einziges Script von Hand anlegen.
 
 | Datei | Wofür |
 |---|---|
+| [`docs/UEBERGABE.md`](docs/UEBERGABE.md) | **Aktueller Stand, offene Aufgaben, Fallstricke** — hier anfangen |
 | [`docs/EINBAU-ANLEITUNG.md`](docs/EINBAU-ANLEITUNG.md) | Einbau, Testen, Balancing, Fehlersuche |
 | [`docs/ARCHITEKTUR.md`](docs/ARCHITEKTUR.md) | Bauplan: welches Script wo liegt und warum |
 

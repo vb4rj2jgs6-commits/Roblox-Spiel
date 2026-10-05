@@ -255,7 +255,7 @@ function HangarService:Init()
 			CanCollide = false,
 			CanQuery = false,
 			CanTouch = false,
-			CFrame = CFrame.new(PlotService:ZuWelt(plot, Config.PlotPunkte.Orbit)),
+			CFrame = PlotService:ZuWeltCF(plot, CFrame.new(Config.PlotPunkte.Orbit)),
 		})
 		anker.Parent = hangar
 		hangar.PrimaryPart = anker

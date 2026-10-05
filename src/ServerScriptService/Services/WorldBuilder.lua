@@ -78,14 +78,18 @@ local function baseplateEntfernen()
 	end
 end
 
--- Ein paar dekorative Asteroiden weit ausserhalb der Plots.
--- Rein optisch, keine Kollision -> kostet fast keine Performance.
+-- Asteroidenguertel weit ausserhalb der Plots.
+-- Rein optisch: keine Kollision, keine Abfragen -> kostet fast nichts.
+-- Random.new mit festem Startwert, damit die Karte bei jedem Serverstart
+-- gleich aussieht. Ohne den Startwert waere jeder Server anders.
 local function asteroidenStreuen(ordner: Folder)
+	local einstellungen = Config.Welt.Asteroidenguertel
 	local zufall = Random.new(2024)
-	for i = 1, 40 do
-		local groesse = zufall:NextNumber(12, 45)
+
+	for i = 1, einstellungen.Anzahl do
+		local groesse = zufall:NextNumber(einstellungen.MinGroesse, einstellungen.MaxGroesse)
 		local winkel = zufall:NextNumber(0, math.pi * 2)
-		local radius = zufall:NextNumber(500, 1400)
+		local radius = zufall:NextNumber(einstellungen.InnenRadius, einstellungen.AussenRadius)
 
 		local fels = Util.NeuerPart({
 			Name = "Asteroid_" .. i,
@@ -101,7 +105,7 @@ local function asteroidenStreuen(ordner: Folder)
 			CanTouch = false,
 			CFrame = CFrame.new(
 				math.cos(winkel) * radius,
-				zufall:NextNumber(-250, 350),
+				zufall:NextNumber(-einstellungen.HoehenStreuung, einstellungen.HoehenStreuung),
 				math.sin(winkel) * radius
 			) * CFrame.Angles(
 				zufall:NextNumber(0, 6),
@@ -111,6 +115,145 @@ local function asteroidenStreuen(ordner: Folder)
 		})
 		fels.Parent = ordner
 	end
+end
+
+-- ================================================================
+-- ZENTRALSTATION
+--
+-- Der Mittelpunkt der Karte. Die Spieler-Stationen liegen im Ring
+-- darum herum und sind ueber Stege mit ihr verbunden (die Stege baut
+-- der PlotService, weil nur er die Lage der Stationen kennt).
+--
+-- Sie ist bewusst begehbar: Damit entsteht ein Treffpunkt, an dem man
+-- die Nachbarn sieht — das macht aus sechs Einzel-Plots eine Karte.
+-- ================================================================
+local function baueZentralstation(ordner: Folder)
+	local einstellungen = Config.Welt.Zentralstation
+	if not einstellungen.Aktiv then
+		return
+	end
+
+	local radius = einstellungen.Radius
+	local hoehe = einstellungen.Hoehe
+
+	local station = Instance.new("Model")
+	station.Name = "Zentralstation"
+	station.Parent = ordner
+
+	-- Begehbare Ringplattform. Ein Zylinder liegt flach, wenn man ihn
+	-- um 90 Grad um die Z-Achse dreht: Size ist dann (Dicke, Durchmesser,
+	-- Durchmesser).
+	local deck = Util.NeuerPart({
+		Name = "Deck",
+		Shape = Enum.PartType.Cylinder,
+		Size = Vector3.new(5, radius * 2, radius * 2),
+		Color = Config.Plot.DeckFarbe,
+		Material = Enum.Material.Metal,
+		CFrame = CFrame.new(0, hoehe - 2.5, 0) * CFrame.Angles(0, 0, math.rad(90)),
+	})
+	deck.Parent = station
+	station.PrimaryPart = deck
+
+	local rand = Util.NeuerPart({
+		Name = "Rand",
+		Shape = Enum.PartType.Cylinder,
+		Size = Vector3.new(1.4, radius * 2 + 6, radius * 2 + 6),
+		Color = Config.Plot.RandFarbe,
+		Material = Enum.Material.Neon,
+		CanCollide = false,
+		CanQuery = false,
+		CanTouch = false,
+		CFrame = CFrame.new(0, hoehe - 0.4, 0) * CFrame.Angles(0, 0, math.rad(90)),
+	})
+	rand.Parent = station
+
+	-- Turm in der Mitte
+	local turm = Util.NeuerPart({
+		Name = "Turm",
+		Shape = Enum.PartType.Cylinder,
+		Size = Vector3.new(70, 34, 34),
+		Color = Color3.fromRGB(54, 60, 82),
+		Material = Enum.Material.Metal,
+		CFrame = CFrame.new(0, hoehe + 35, 0) * CFrame.Angles(0, 0, math.rad(90)),
+	})
+	turm.Parent = station
+
+	local kuppel = Util.NeuerPart({
+		Name = "Kuppel",
+		Shape = Enum.PartType.Ball,
+		Size = Vector3.new(44, 44, 44),
+		Color = Config.Plot.RandFarbe,
+		Material = Enum.Material.Neon,
+		Transparency = 0.55,
+		CanCollide = false,
+		CanQuery = false,
+		CanTouch = false,
+		CFrame = CFrame.new(0, hoehe + 72, 0),
+	})
+	kuppel.Parent = station
+
+	local licht = Instance.new("PointLight")
+	licht.Brightness = 3
+	licht.Range = 120
+	licht.Color = Config.Plot.RandFarbe
+	licht.Parent = kuppel
+
+	-- Beschriftung, von allen Stationen aus lesbar
+	local tafel = Instance.new("BillboardGui")
+	tafel.Name = "Beschriftung"
+	tafel.Size = UDim2.fromScale(40, 8)
+	tafel.StudsOffsetWorldSpace = Vector3.new(0, 34, 0)
+	tafel.MaxDistance = 900
+	tafel.Parent = kuppel
+
+	local text = Instance.new("TextLabel")
+	text.Size = UDim2.fromScale(1, 1)
+	text.BackgroundTransparency = 1
+	text.Font = Enum.Font.GothamBlack
+	text.TextScaled = true
+	text.TextColor3 = Color3.fromRGB(200, 240, 255)
+	text.TextStrokeTransparency = 0.4
+	text.Text = Config.Spiel.Name
+	text.Parent = tafel
+
+	-- Dockkragen: Dort, wo die Stege der Spieler ankommen.
+	-- Wir rechnen mit denselben Winkeln wie der PlotService, damit
+	-- Kragen und Steg genau aufeinandertreffen.
+	if einstellungen.Dockarme then
+		for index = 1, Config.Plot.Anzahl do
+			local winkel = (index - 1) / Config.Plot.Anzahl * math.pi * 2
+			local richtung = Vector3.new(math.cos(winkel), 0, math.sin(winkel))
+
+			local kragen = Util.NeuerPart({
+				Name = "Dockkragen" .. index,
+				Size = Vector3.new(Config.Plot.BrueckeBreite + 8, 7, 14),
+				Color = Color3.fromRGB(62, 70, 94),
+				Material = Enum.Material.Metal,
+				CFrame = CFrame.lookAt(
+					Vector3.new(0, hoehe + 1.5, 0) + richtung * (radius - 2),
+					Vector3.new(0, hoehe + 1.5, 0) + richtung * (radius + 20)
+				),
+			})
+			kragen.Parent = station
+
+			local lampe = Util.NeuerPart({
+				Name = "Docklicht" .. index,
+				Size = Vector3.new(Config.Plot.BrueckeBreite + 8, 1, 1.6),
+				Color = Color3.fromRGB(120, 255, 180),
+				Material = Enum.Material.Neon,
+				CanCollide = false,
+				CanQuery = false,
+				CanTouch = false,
+				CFrame = CFrame.lookAt(
+					Vector3.new(0, hoehe + 5.2, 0) + richtung * (radius + 4),
+					Vector3.new(0, hoehe + 5.2, 0) + richtung * (radius + 24)
+				),
+			})
+			lampe.Parent = station
+		end
+	end
+
+	return station
 end
 
 function WorldBuilder:Bauen()
@@ -132,15 +275,17 @@ function WorldBuilder:Bauen()
 	deko.Parent = welt
 
 	asteroidenStreuen(deko)
+	baueZentralstation(welt)
 
-	-- Zentrale Sonne als reines Leuchtobjekt in der Mitte der Karte
+	-- Zentralstern als reines Leuchtobjekt am Rand der Karte
+	local stern = Config.Welt.Zentralstern
 	local sonne = Util.NeuerPart({
 		Name = "Zentralstern",
 		Shape = Enum.PartType.Ball,
-		Size = Vector3.new(180, 180, 180),
-		Position = Vector3.new(0, 900, -2200),
+		Size = Vector3.new(stern.Radius * 2, stern.Radius * 2, stern.Radius * 2),
+		Position = stern.Position,
 		Material = Enum.Material.Neon,
-		Color = Color3.fromRGB(255, 190, 120),
+		Color = stern.Farbe,
 		CanCollide = false,
 		CanQuery = false,
 		CanTouch = false,
